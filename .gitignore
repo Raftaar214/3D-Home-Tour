@@ -1,10 +1,8 @@
-# Client drawings stay on this computer, not in the repository
+# Client drawings: kept off GitHub while the repository is public
 *.pdf
 walkthrough/debug/plan.png
 
-# Local and generated files
+# Python's compiled cache, rebuilt automatically
 __pycache__/
 *.pyc
 *.tmp
-walkthrough/js/plan-data.original.js
-.claude/
