@@ -1,0 +1,10 @@
+# Client drawings stay on this computer, not in the repository
+*.pdf
+walkthrough/debug/plan.png
+
+# Local and generated files
+__pycache__/
+*.pyc
+*.tmp
+walkthrough/js/plan-data.original.js
+.claude/
