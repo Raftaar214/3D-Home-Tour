@@ -48,6 +48,14 @@ HEADER = """/* The editable floor plan: walls, their windows and doors, pillars,
 """
 
 
+def stamp(path):
+    """Version mark of a plan file: changes whenever the file is written."""
+    try:
+        return str(os.stat(path).st_mtime_ns)
+    except OSError:
+        return ''
+
+
 def is_rect(r):
     return isinstance(r, list) and len(r) == 4 and all(isinstance(v, (int, float)) for v in r)
 
@@ -102,7 +110,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.split('?')[0] == '/api/ping':
-            return self.reply(200, {'ok': True, 'canSave': True, 'hasOriginal': os.path.exists(ORIG)})
+            floor = 'ground' if 'floor=ground' in self.path else 'first'
+            return self.reply(200, {'ok': True, 'canSave': True, 'hasOriginal': os.path.exists(FLOORS[floor][1]), 'stamp': stamp(FLOORS[floor][0])})
         return super().do_GET()
 
     def do_POST(self):
@@ -116,7 +125,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path == '/api/reset':
             if os.path.exists(orig_file):
                 shutil.copyfile(orig_file, plan_file)
-            return self.reply(200, {'ok': True})
+            return self.reply(200, {'ok': True, 'stamp': stamp(plan_file)})
         if path != '/api/plan':
             return self.reply(404, {'ok': False, 'error': 'unknown'})
         try:
@@ -129,13 +138,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         problem = check(data)
         if problem:
             return self.reply(400, {'ok': False, 'error': problem})
+        # An editor page saves only over the version of the file it loaded. A page left open
+        # from before a newer save (another tab, or a change made outside the editor) is
+        # refused and asked to reload, instead of quietly putting old walls back.
+        if self.headers.get('X-Plan-Stamp', '') != stamp(plan_file):
+            return self.reply(409, {'ok': False, 'error': 'stale', 'stamp': stamp(plan_file)})
         if not os.path.exists(orig_file) and os.path.exists(plan_file):
             shutil.copyfile(plan_file, orig_file)  # keep the plan as it was before the first edit
         tmp = plan_file + '.tmp'
         with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
             f.write(render(data, floor))
         os.replace(tmp, plan_file)
-        return self.reply(200, {'ok': True})
+        return self.reply(200, {'ok': True, 'stamp': stamp(plan_file)})
 
     def log_message(self, fmt, *args):
         pass

@@ -17,10 +17,10 @@
 
   // --- the plan being edited ----------------------------------------------------
   const pick = (d) => ({ version: BASE.version, H: d.H, walls: clone(d.walls), pillars: clone(d.pillars), areas: clone(d.areas || (GROUND ? [] : A.DEFAULT_AREAS)), wardrobes: clone(d.wardrobes || (GROUND ? [] : A.DEFAULT_WARDROBES)) });
-  let plan = pick(BASE);
+  let plan = pick(BASE), browserCopy = null;
   try {
     const s = localStorage.getItem(KEY);
-    if (s) { const o = JSON.parse(s); if (o && o.version === BASE.version && Array.isArray(o.walls) && Array.isArray(o.pillars)) plan = pick(o); }
+    if (s) { const o = JSON.parse(s); if (o && o.version === BASE.version && Array.isArray(o.walls) && Array.isArray(o.pillars)) browserCopy = pick(o); }
   } catch (err) { /* no storage: work from the file */ }
 
   let sel = null;            // { kind: 'wall' | 'op' | 'pillar' | 'area', i, j }
@@ -81,14 +81,15 @@
   function restore(s) { const o = JSON.parse(s); plan = o.plan; sel = o.sel; }
   /* Saving. When the page comes from the local server (serve.py) every change is
      written into js/plan-data.js on disk. Otherwise it is kept in this browser. */
-  let disk = false, diskTimer = null, diskState = '', checked = false;
-  const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Plan-Editor': '1' }, body: body || '{}' }).then((r) => r.json());
+  let disk = false, diskTimer = null, diskState = '', checked = false, fileStamp = '';
+  const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Plan-Editor': '1', 'X-Plan-Stamp': fileStamp }, body: body || '{}' }).then((r) => r.json());
   function pushDisk() {
     diskState = 'busy';
     clearTimeout(diskTimer);
     diskTimer = setTimeout(() => {
       post('api/plan' + QS, JSON.stringify(plan)).then((j) => {
-        diskState = j && j.ok ? 'ok' : 'fail';
+        diskState = j && j.ok ? 'ok' : j && j.error === 'stale' ? 'stale' : 'fail';
+        if (j && j.ok) fileStamp = j.stamp || fileStamp;
         if (diskState === 'ok') { try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ } }
         showStatus(true);
       }).catch(() => { diskState = 'fail'; showStatus(true); });
@@ -98,12 +99,13 @@
     const same = JSON.stringify(pick(BASE)) === JSON.stringify(plan);
     const pill = $('savepill');
     if (pill) {
-      const st = disk ? (diskState === 'fail' ? ['bad', 'NOT saved: could not write the plan file'] : diskState === 'busy' ? ['busy', 'Saving…'] : ['good', diskState === 'ok' ? 'Saved to plan file at ' + new Date().toTimeString().slice(0, 5) : 'Connected to plan file'])
+      const st = disk ? (diskState === 'stale' ? ['bad', 'NOT saved: the plan changed elsewhere. Reload this page'] : diskState === 'fail' ? ['bad', 'NOT saved: could not write the plan file'] : diskState === 'busy' ? ['busy', 'Saving…'] : ['good', diskState === 'ok' ? 'Saved to plan file at ' + new Date().toTimeString().slice(0, 5) : 'Connected to plan file'])
         : checked ? ['bad', 'NOT saving to the plan file. Open http://localhost:8765/editor.html' + QS] : ['busy', 'Checking…'];
       pill.className = 'pill ' + st[0];
       pill.textContent = st[1];
     }
     if (disk) {
+      if (diskState === 'stale') { $('status').innerHTML = '<b>Not saved.</b> This floor\'s plan file was changed after this page opened (in another tab, or by an update). Reload the page to get the latest plan, then make the change again.'; return; }
       $('status').innerHTML = diskState === 'ok' ? '<b>Saved to the plan file.</b> The 3D walkthrough uses it.'
         : diskState === 'fail' ? '<b>Could not write the plan file.</b> Your changes are kept in this browser; use Download plan file as well.'
         : diskState === 'busy' ? 'Saving to the plan file…' : '<b>Plan file loaded.</b> Changes are saved into it as you make them.';
@@ -113,9 +115,10 @@
       : same ? '<b>Matches the original plan.</b>' : '<b>Edited.</b> Saved in this browser only. Open the editor from http://localhost:8765/editor.html' + QS + ' to save into the plan file.';
     if (same && ok) { try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ } }
   }
-  function save() {
+  function save(initial) {
     tidy();
     let ok = true;
+    if (initial && browserCopy) return showStatus(true); // keep the browser's copy until it is used or dropped
     try { localStorage.setItem(KEY, JSON.stringify(plan)); } catch (err) { ok = false; }
     if (disk) pushDisk();
     showStatus(ok);
@@ -628,17 +631,24 @@
 
   $('g-h').value = fmt(plan.H);
   fit();
-  save();
+  save(true);
   panel();
   // always open the walkthrough fresh, never a remembered copy of the page
   document.querySelectorAll('a[href="index.html"]').forEach((el) => el.addEventListener('click', () => { el.href = 'index.html?t=' + Date.now(); }));
   // Is the local server there to write the plan file?
-  const fromBrowser = JSON.stringify(pick(BASE)) !== JSON.stringify(plan);
-  fetch('api/ping').then((r) => r.json()).then((j) => {
+  const differs = browserCopy && JSON.stringify(browserCopy) !== JSON.stringify(pick(BASE));
+  function useBrowserCopy() { checkpoint(); plan = browserCopy; browserCopy = null; $('g-h').value = fmt(plan.H); changed(); }
+  function dropBrowserCopy() { browserCopy = null; try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ } showStatus(true); }
+  fetch('api/ping' + QS).then((r) => r.json()).then((j) => {
     checked = true;
-    if (!j || !j.canSave) { showStatus(true); return; }
+    if (!j || !j.canSave) { if (browserCopy) useBrowserCopy(); else showStatus(true); return; }
     disk = true;
-    if (fromBrowser) pushDisk(); // edits kept in this browser earlier: put them in the file now
+    fileStamp = j.stamp || '';
     showStatus(true);
-  }).catch(() => { checked = true; showStatus(true); /* opened as a plain file: browser storage only */ });
+    if (differs) { // an unsaved copy from earlier: the plan file wins unless asked otherwise
+      $('status').innerHTML = '<b>The plan file is open.</b> This browser also kept an unsaved copy from earlier, which differs from the file. <button type="button" id="usecopy">Use the browser copy</button> <button type="button" id="dropcopy">Discard it</button>';
+      $('usecopy').addEventListener('click', useBrowserCopy);
+      $('dropcopy').addEventListener('click', dropBrowserCopy);
+    } else if (browserCopy) dropBrowserCopy();
+  }).catch(() => { checked = true; if (browserCopy) useBrowserCopy(); else showStatus(true); /* opened as a plain file: browser storage only */ });
 })();

@@ -514,7 +514,7 @@
     put(tableLamp(), 17.7, 1.4, 0, 2.8, false);
     artAt(M.art1, 'x', 14.1, 17.3, 0.75, 1, 4.0, 6.5);
     artAt(M.art2, 'y', 11.0, 13.9, -0.25, 1, 3.8, 6.4);
-    hang(curtain(1.2, 7.7), 0.02, 3.0, 90, 7.9);
+    hang(curtain(1.2, 8.2), 0.02, 3.0, 90, 8.4);
 
     // ===== Kitchen: main room plus a utility leg along the south wall =========
     pb('black', 19.3, 0.75, 29.625, 2.6, 0, 0.3);
@@ -578,8 +578,8 @@
     put(plant(3.2, M.potWhite), 0.95, 15.25, 0);
     artAt(M.art3, 'y', 15.3, 17.5, 0.375, 1, 3.8, 6.4);
     put(plant(4.4, M.pot, true), 12.2, 15.9, 0);
-    hang(curtain(1.15, 7.7), 0.62, 17.55, 90, 7.9);
-    hang(curtain(1.15, 7.7), 0.62, 24.98, 90, 7.9);
+    hang(curtain(1.15, 8.2), 0.62, 17.55, 90, 8.4);
+    hang(curtain(1.15, 8.2), 0.62, 24.98, 90, 8.4);
     artAt(M.art4, 'x', 13.05, 15.15, 27.875, -1, 3.5, 6.3);
 
     // chandelier dropping into the void
@@ -609,8 +609,8 @@
     put(roundTable(0.65, 1.6, M.teak, M.brass), 13.6, 44.9, 0);
     put(floorLamp(), 9.95, 45.5, 0, 0, false);
     artAt(M.art2, 'y', 33.3, 36.5, 22.25, -1, 5.7, 7.5);
-    hang(curtain(1.0, 7.7), 9.85, 46.0, 0, 7.9);
-    hang(curtain(1.0, 7.7), 14.4, 46.0, 0, 7.9);
+    hang(curtain(1.0, 8.2), 9.85, 46.0, 0, 8.4);
+    hang(curtain(1.0, 8.2), 15.6, 46.0, 0, 8.4);
 
     // ===== Dress ==============================================================
     // wardrobes come from the plan (they can be added and moved in the editor)

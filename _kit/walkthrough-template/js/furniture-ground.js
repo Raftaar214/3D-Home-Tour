@@ -13,7 +13,7 @@
     const add = (m, lvl) => { m.position.y += lvl === undefined ? GF : lvl; return K.add(m); };
     const pendant = (X, Y, drop, r, shade) => K.pendant(X, Y, drop, r, shade, GF, HG);
     const art = (mat, ax, a0, a1, face, dir, z0, z1) => K.artAt(mat, ax, a0, a1, face, dir, GF + z0, GF + z1);
-    const curtainAt = (X, Y, rot) => K.hang(K.curtain(1.05, 7.7), X, Y, rot, GF + 7.9);
+    const curtainAt = (X, Y, rot) => K.hang(K.curtain(1.05, 8.2), X, Y, rot, GF + 8.4);
     const tiles = (x0, y0, x1, y1) => g('bathwall', x0, y0, x1, y1, 0, HG);
 
     // a single bed for the children's room
