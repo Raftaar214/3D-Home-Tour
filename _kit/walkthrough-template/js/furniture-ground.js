@@ -16,8 +16,9 @@
     const curtainAt = (X, Y, rot) => K.hang(K.curtain(1.05, 8.2), X, Y, rot, GF + 8.4);
     const tiles = (x0, y0, x1, y1) => g('bathwall', x0, y0, x1, y1, 0, HG);
 
-    // a single bed for the children's room
+    // a single bed for the children's room: the arched sage bed modelled in Blender, or simple shapes
     function twin(cover) {
+      if (A.hasModel && A.hasModel('bed_arch')) return K.bedR(K.room('gKids'), true);
       const b = new T.Group(), W = 3.4, L = 6.5;
       K.legs(b, W, L, 0.4, M.teak, 0.08, 0);
       b.add(K.bx(W + 0.2, 0.4, L + 0.15, M.teak, 0, 0.4, 0));
@@ -35,27 +36,27 @@
     }
 
     // ===== Living / dining hall (double height over the dining end) ============
-    put(K.sofa(7, M.fabIvory, M.fabTerra, M.fabMustard), 4.7, 16.35, 0);
-    put(K.sofa(2.9, M.fabTeal, null, null, 2.8), 1.95, 20.6, 90);
-    put(K.sofa(2.9, M.fabTerra, null, null, 2.8), 8.0, 20.6, -90);
-    put(K.roundTable(1.35, 1.25, M.teak, M.brass), 4.8, 20.5, 0);
-    K.rugAt(M.rugLiving, 4.8, 19.9, 8.4, 7.4, GF);
+    // design: oat linen and cognac leather, oak, travertine
+    const RH = K.room('gHall');
+    put(K.sofaR(7, RH), 4.7, 16.35, 0);
+    put(K.armchair(RH), 1.95, 20.6, 90);
+    put(K.armchair(RH), 8.0, 20.6, -90);
+    put(K.roundTable(1.35, 1.25, RH.top, RH.wood), 4.8, 20.5, 0);
+    if (STYLE !== 'luxury') K.decorOn(4.8, 20.3, GF + 1.25, RH, 'pair');
+    K.rugAt(RH.rug, 4.8, 19.9, 8.4, 7.4, GF);
     put(K.floorLamp(), 0.95, 15.35, 0, false);
-    put(K.plant(3.4, M.potWhite), 1.05, 26.7, 0);
+    put(K.plant(3.4, M.potWhite), 1.05, 26.3, 0);           // clear of the entrance curtains
     art(M.art1, 'x', 2.9, 6.5, 14.625, 1, 4.3, 6.9);
-    curtainAt(0.62, 17.55, 90);
-    curtainAt(0.62, 24.96, 90);
-    // sideboard on the entrance wall
-    g('walnut', 9.5, 26.55, 12.4, 27.875, 0.55, 2.9);
-    g('black', 9.65, 26.7, 12.25, 27.8, 0.25, 0.55);
-    block(9.5, 26.55, 12.4, 27.875);
-    K.put(K.tableLamp(), 10.1, 27.2, 0, GF + 2.9, false);
+    // reeded sideboard on the entrance wall
+    put(K.consoleR(RH, 3.1), 10.95, 27.875 - 0.8, 180);
+    K.put(K.tableLamp(), 10.1, 27.2, 0, GF + 2.65, false);
+    K.decorOn(11.8, 27.1, GF + 2.65, RH, 'books');
     art(M.art3, 'x', 9.85, 12.05, 27.875, -1, 4.1, 6.5);
     // dining under the double height
-    put(K.dining(), 17.6, 20.6, 0);
-    K.rugAt(M.rugGF, 17.6, 20.6, 7.6, 8.4, GF);
-    // under the main stair: a store cupboard below the landing, plants below the top flight
-    K.cabRun('walnut', 'y', 24.1, 27.75, 26.2, -1, GF, GF + 5.9, 3.35, 1.2);
+    put(K.diningR(RH), 17.6, 20.6, 0);
+    K.rugAt(RH.rug, 17.6, 20.6, 7.6, 8.4, GF);
+    // under the main stair: left open (the cupboard was taken out), plants below the top flight.
+    // The space under the landing is kept off the walking route: it is only about 5'-6" high.
     block(26.2, 24.1, 29.625, 27.875);
     put(K.plant(4.0, M.pot), 22.9, 26.9, 0);
     put(K.plant(3.0, M.potWhite), 25.0, 27.0, 0);
@@ -89,22 +90,21 @@
     for (const [fx, fy] of [[14.9, 37.15], [15.12, 37.28], [15.0, 37.38]]) add(K.mesh(new T.SphereGeometry(0.13, 12, 10), M.fabMustard, fx, 3.14, fy));
 
     // ===== Children's bedroom: two single beds, a study desk at the window ======
-    put(twin(M.fabTeal), 3.2, 6.6, 90);
-    put(twin(M.fabMustard), 3.2, 12.4, 90);
-    put(K.roundTable(0.6, 1.7, M.teak, M.brass), 0.75, 9.5, 0);
+    // design: sage and oat, pale ash
+    const RK = K.room('gKids');
+    put(twin(), 3.35, 6.75, 90);
+    put(twin(), 3.35, 12.25, 90);
+    put(K.roundTable(0.6, 1.7, RK.top, RK.wood), 0.75, 9.5, 0);
     K.put(K.tableLamp(), 0.75, 9.5, 0, GF + 1.7, false);
-    g('teak', 7.0, 4.75, 9.3, 6.35, 2.35, 2.5);            // desk under the rear window
-    g('black', 7.05, 4.8, 7.15, 6.3, 0, 2.35);
-    g('black', 9.15, 4.8, 9.25, 6.3, 0, 2.35);
+    g(RK.woodKey, 7.0, 4.75, 9.3, 6.35, 2.35, 2.5);        // desk under the rear window
+    g(RK.woodKey, 7.05, 4.8, 7.15, 6.3, 0, 2.35);
+    g(RK.woodKey, 9.15, 4.8, 9.25, 6.3, 0, 2.35);
     block(7.0, 4.75, 9.3, 6.35);
-    put(K.chair(M.fabSand), 8.15, 7.25, 180);
-    g('fabTeal', 7.3, 5.0, 7.9, 5.8, 2.5, 2.62);           // books on the desk
-    g('fabMustard', 7.35, 5.05, 7.85, 5.75, 2.62, 2.72);
-    K.rugAt(M.rugBed, 9.3, 10.6, 4.6, 6.2, GF);
+    put(K.chairR(RK, RK.main), 8.15, 7.25, 180);
+    K.decorOn(7.6, 5.4, GF + 2.5, RK, 'books');            // books on the desk
+    K.rugAt(RK.rug, 9.3, 10.6, 4.6, 6.2, GF);
     art(M.art2, 'y', 5.4, 7.2, -0.25, 1, 4.6, 6.3);
     art(M.art4, 'y', 11.6, 13.4, -0.25, 1, 4.6, 6.3);
-    curtainAt(0.02, 7.45, 90);
-    curtainAt(0.02, 11.3, 90);
     pendant(8.6, 10.2, 7.4, 0.5, M.brass);
 
     // ===== Pooja: marble mandir on the rear wall ================================
@@ -140,7 +140,7 @@
     tiles(15.26, 6.75, 19.25, 6.785);
     tiles(15.26, 6.75, 15.295, 9.5);
     tiles(19.215, 6.75, 19.25, 14.25);
-    g('walnut', 13.3, 10.4, 14.9, 13.3, 1.3, 2.6);
+    g('oak', 13.3, 10.4, 14.9, 13.3, 1.3, 2.6);
     g('quartz', 13.3, 10.35, 14.95, 13.35, 2.6, 2.75);
     add(K.cyl(0.6, 0.45, 0.4, M.ceramic, 14.1, 2.75, 11.85, 32));
     g(TAP, 13.4, 11.8, 13.5, 11.9, 2.75, 3.6);
@@ -153,17 +153,17 @@
     g('fabWhite', 19.1, 10.1, 19.2, 11.1, 2.7, 4.25);
 
     // ===== Guest bedroom ==========================================================
-    put(K.bed(), 26.0, 6.5, -90);
-    put(K.roundTable(0.7, 1.9, M.teak, M.brass), 28.5, 2.0, 0);
-    put(K.roundTable(0.7, 1.9, M.teak, M.brass), 28.5, 11.0, 0);
-    pendant(28.5, 2.0, 4.9, 0.3, null);
-    pendant(28.5, 11.0, 4.9, 0.3, null);
-    K.rugAt(M.rugBed, 24.4, 6.5, 8.2, 8.4, GF);
+    // design: dove grey and charcoal, oak, white marble
+    const RG = K.room('gGuest');
+    put(K.bedR(RG), 26.0, 6.5, -90);
+    put(K.nightstand(RG), 28.8, 2.0, -90);
+    put(K.nightstand(RG), 28.8, 11.0, -90);
+    pendant(28.8, 2.0, 4.9, 0.3, null);
+    pendant(28.8, 11.0, 4.9, 0.3, null);
+    K.rugAt(RG.rug, 24.4, 6.5, 8.2, 8.4, GF);
     art(M.art4, 'y', 3.6, 6.6, 19.625, 1, 3.9, 6.3);
     art(M.art2, 'y', 4.9, 8.1, 29.625, -1, 5.7, 7.5);
     put(K.plant(3.4, M.pot), 20.5, 1.6, 0);
-    curtainAt(22.95, 1.0, 0);
-    curtainAt(28.05, 1.0, 0);
 
     // ===== Passage ================================================================
     art(M.art1, 'y', 28.75, 30.15, 19.75, -1, 3.9, 6.3);
@@ -172,7 +172,7 @@
     tiles(20.125, 28.25, 29.625, 28.285);
     tiles(20.125, 33.215, 29.625, 33.25);
     tiles(29.59, 28.25, 29.625, 33.25);
-    g('walnut', 21.2, 28.285, 24.5, 29.9, 1.3, 2.6);
+    g('oak', 21.2, 28.285, 24.5, 29.9, 1.3, 2.6);
     g('quartz', 21.15, 28.285, 24.55, 29.95, 2.6, 2.75);
     add(K.cyl(0.6, 0.45, 0.4, M.ceramic, 22.85, 2.75, 29.15, 32));
     g(TAP, 22.8, 28.4, 22.9, 28.5, 2.75, 3.6);
@@ -187,23 +187,23 @@
     add(K.cyl(0.5, 0.5, 0.06, M[TAP], 26.15, 7.28, 29.6, 28));
 
     // ===== Master bedroom ==========================================================
-    put(K.bed(), 25.7, 38.9, -90);
-    put(K.bench(M.fabTerra), 21.45, 38.9, -90);
-    put(K.roundTable(0.7, 1.9, M.teak, M.brass), 28.3, 34.75, 0);
-    put(K.roundTable(0.65, 1.9, M.teak, M.brass), 28.3, 43.05, 0);
-    pendant(28.3, 34.75, 4.9, 0.3, null);
-    pendant(28.3, 43.05, 4.9, 0.3, null);
-    K.rugAt(M.rugGF, 23.6, 38.9, 9.4, 8.6, GF);
+    // design: mushroom wingback and champagne, honey teak, travertine
+    const RB = K.room('gMaster');
+    put(K.bedR(RB), 25.45, 38.9, -90);
+    put(K.benchR(RB), 21.2, 38.9, -90);
+    put(K.nightstand(RB, 0.9), 28.4, 34.55, -90);
+    put(K.nightstand(RB, 0.9), 28.4, 43.25, -90);
+    pendant(28.4, 34.55, 4.9, 0.3, null);
+    pendant(28.4, 43.25, 4.9, 0.3, null);
+    K.rugAt(RB.rug, 23.4, 38.9, 9.4, 8.6, GF);
     g('fluted', 16.25, 36.7, 16.31, 40.5, 0, HG);            // TV wall
-    g('walnut', 16.31, 36.9, 17.5, 40.3, 0.55, 1.7);
+    g(RB.woodKey, 16.31, 36.9, 17.5, 40.3, 0.55, 1.7);
     g('black', 16.45, 37.1, 17.35, 40.1, 0.25, 0.55);
     g('screen', 16.31, 37.2, 16.43, 40.0, 2.9, 4.9);
     block(16.25, 36.9, 17.5, 40.3);
-    put(K.chair(M.fabMustard), 20.9, 45.2, 180);
+    put(K.armchair(RB), 20.9, 44.55, 180);
     put(K.floorLamp(), 19.6, 45.6, 0, false);
     art(M.art3, 'y', 37.3, 40.5, 29.25, -1, 5.7, 7.5);
-    curtainAt(16.85, 45.95, 0);
-    curtainAt(19.15, 45.95, 0);
 
     // wardrobes come from the plan (they can be added and moved in the editor)
     K.wardrobeSet(GR.wardrobes, GF);

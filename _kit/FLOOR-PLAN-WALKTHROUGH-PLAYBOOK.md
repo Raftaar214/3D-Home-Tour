@@ -150,9 +150,15 @@ There is no Blender connector in the Claude connector directory, so Claude Code 
   - a duvet and a runner, draped over the mattress by cloth simulation (one set for a double bed, one for a single)
   - two potted plants with real leaves
   - turned lamp shades, a table-lamp base and a pendant dome
+  - interior pieces: track-arm and tuxedo sofas (3-seat, 2-seat, armchair), an armless lounge chair, four beds (channel-tufted, wingback, panel, arched single), an upholstered dining chair, a racetrack dining table on turned pedestals, round and rectangular coffee tables, a side table, a nightstand, a reeded sideboard, a bed bench, and decor (two vases, a bowl, a book stack, candles). Split by role (body, cushion, leg, head, base, top, front, pull...) so each room paints them in its own palette.
+  - the name plate: `make_furniture.py -- <out models-data.js> "<Home name>"` sets the lettering.
+  - curtains: a pleated drape (stretched to each panel and drop), a rod, a ball finial and a wall bracket.
+  - fittings: railing parts (a chamfered post, a pyramid post cap, a round baluster bar, a handrail with a rounded top) and a 4" skirting with a rounded top edge. Each is one foot long (or high); the walkthrough stretches it along each railing run and each wall (`piece()` in `shell.js`), so a few dozen triangles serve the whole house.
 - **Styles:** each model is split by role (fabric, piping, pot, leaf, shade...), and the walkthrough paints each role with the current style's material, so the same models serve all three styles.
 - **Loading:** `js/models.js` loads the models. `furniture.js` uses them through `soft()`, `bedding()`, `plant()` and the lamp functions, and falls back to plain shapes if `models-data.js` is missing.
 - **Fabric:** every fabric material also gets a fine woven texture.
+- **The Blender connector:** the Claude extension "Blender" (Blender Lab) needs Blender running with its add-on. On a PC with Windows Smart App Control turned on, the extension cannot start (its own Python is unsigned and blocked, os error 4551), while Blender itself runs, being signed. Drive Blender from the command line as above; leave Smart App Control to the architect.
+- **The Manglam Vila PC (17 Nov 2026):** Blender 5.3.0 installed at the same path, `D:\Apps\blender-5.3.0-windows-x64`; it is not on PATH, so call `blender.exe` by its full path.
 - **Keep it light:** about 1,000 triangles per cushion and about 5,000 per bedding set. After any change to the models, measure a frame in the busiest views (street, hall, bedroom). On the practice PC the target is under about 10 ms at 1.25× resolution.
 
 ## 7. Preferences and decisions
@@ -177,6 +183,13 @@ There is no Blender connector in the Claude connector directory, so Claude Code 
 | Where the tour starts when no main door is drawn | At the stairs |
 | A stair that was removed and its space reassigned | That plan only |
 | Fridge in the kitchen | None |
+| Floor finish | The living room's tile through the whole house, bedrooms and toilets included |
+| Skirting | 4" on every wall, in the floor's own material |
+| Railing on balconies and terraces | Chosen per balcony and per parapet in the editor; jaali where not chosen |
+| Doors and windows | One colour together; all furniture in other colours |
+| Furniture | Calm, elegant palettes (no bright sofa or bed sets); every room its own design |
+| Paintings | Every painting different |
+| Name plate | "Manglam Vila" on the gate pier (`g-front-pier`) |
 
 **Assumed when a drawing is silent**, stated in the reading for correction: 7' door and window heads, 3' window sills (2'-6" in living rooms and bedrooms), 3'-6" railings, 5" slabs, 9" outer and 4½" inner walls.
 
@@ -191,7 +204,9 @@ There is no Blender connector in the Claude connector directory, so Claude Code 
 - `pillars`, `areas` (terrace, balcony, double-height void) and `wardrobes` (footprint, door side, height, mirror).
 - Read positions from the PDF's vector lines where possible, not by eye.
 
-**Worked out automatically from the plan**: railings on floor edges beside voids and stairwells, railings on open edges of terraces and balconies, and what a person cannot walk through.
+**Worked out automatically from the plan**: railings on floor edges beside voids and stairwells, railings on open edges of terraces and balconies, railings on top of low parapets, 4" skirting on every wall face that meets a finished floor (stopping at doors and openings), and what a person cannot walk through.
+
+**Railings** (`A.wallRail` and `rails` in `plan.js`, drawn in `shell.js`): kinds are jaali, glass, metal bars or none. A terrace or balcony has "Railing on open sides" and "Railing height" (`rail`, `railTop` on the area). A wall has "Railing on top" (`rail`, `railTop` on the wall): Automatic puts the area's railing on a low wall (under 3 ft) along a terrace or balcony; a wall can also be set to a kind or None. A parapet from the floor that is at least 1 ft high stops the open-edge railing, so the railing sits on the parapet, never through it. The editor draws a dotted white line down walls that carry a railing.
 
 **Not automatic, so refit by hand after a layout change**: room floor finishes, room captions, furniture, wall art, lights and the tour path.
 
@@ -203,7 +218,7 @@ There is no Blender connector in the Claude connector directory, so Claude Code 
 
 **Single file** (`build.py`): one HTML file that reads the editor's plan on opening and keeps a built-in copy as fallback. `python build.py --share <file>` makes the self-contained copy that is published as the link.
 
-**Smoothness on integrated graphics**: draw the sun's shadows once, not every frame; light only the four lamps nearest the viewer; lower the drawing resolution automatically when frames are slow.
+**Smoothness on integrated graphics**: draw the sun's shadows once, not every frame; light only the four lamps nearest the viewer; lower the drawing resolution automatically when frames are slow; merge furniture and trees into one mesh per material (`A.kit.mergeStatic`), which took the street view from 751 draw calls to about 135; draw walls and floors before furniture so hidden furniture is skipped. Measure speed only with the browser pane visible: a hidden pane is throttled and its timings swing by 3× from run to run.
 
 **Checks before saying it is done:**
 - Top view of each floor over its drawing (`index.html?debug=plan`): walls, openings and stairs line up.
@@ -233,6 +248,8 @@ There is no Blender connector in the Claude connector directory, so Claude Code 
 - **A second link by accident.** Publishing the share copy without the existing link's URL makes a new, separate link. Always publish to the same URL.
 - **Editor edits arriving mid-job.** The client's plans were edited again while the ground floor was being built. Before every rebuild, compare the plan files with the last version you fitted (a plan diff), and refit furniture, labels and the tour to what changed.
 - **Stairs that go further than one floor.** The front stair runs ground floor → first-floor landing beside the balcony → roof. Read the stair lines on every floor's drawing, not only the lowest.
+- **A parapet that vanished.** Leaving an opening in the roof parapet for the stair landing removed the wall along the whole edge, because the edge was not cut at the opening's sides. Pass the opening's ends as cut points to `boundary()`.
+- **Two servers on one port.** On Windows a second `serve.py` can bind the same port as one already running. Check `netstat` first and use the one that is running.
 - **Open doors meeting furniture.** A newly opened or widened door leaf ended up through a sofa or armchair. After every door edit, check the swing area of each open leaf.
 
 ---
@@ -292,6 +309,80 @@ How these were built, for reuse:
 - **Start Tour** (`js/tour.js`): a large Start Tour button and the Start tour control on the bar. Each pause shows a label with the floor, room name, area in sq ft and one selling point. These are written per home in the tour's key points (`label: [name, size, selling point]`); take sizes from the drawing, and keep each selling point to one short factual line. At the end the camera rises through the roof to the dollhouse view and turns slowly.
 - **Music** (`js/music.js`): a slow four-chord pad with soft bell notes, made in the browser with Web Audio. It starts with the tour (browsers only allow sound after a click) and has a Music on/off button.
 
+
+Second session, 17 Nov 2026, on the Manglam Vila PC (`D:\Manglam Vila`):
+
+37. `do not change anything as of now read the files in folder https://github.com/niksgpt/Manglam-Vila.git this is the repo link`
+38. `is blender connected and ready to use?`
+39. `Yes, install it` (Blender 5.3.0 portable ZIP from download.blender.org, SHA-256 checked, unpacked to `D:\Apps\blender-5.3.0-windows-x64`)
+40. Pasted as a list:
+    ```
+    remove the almirah below the stair
+    add option to add railing for balcony in editor
+    the floor in full house would be of same tile which is used in living room
+    add skirting of 4 inch to every wall
+    site plan is updated,
+    ```
+41. `use blender for these tasks`
+
+Notes on 40–41: the almirah was the store cupboard under the main stair landing (ground floor); the space is left open but kept off the walking route (about 5'-6" headroom). Railing options and skirting are described in section 8. Blender modelled the railing parts and the skirting profile (section 6); the editor option, the floor finish and the refit are code and plan changes. The plan edits that came with the list: windows resized on both floors (sills to 3'-1"), the first-floor kitchen door moved, the bedroom-to-gallery window widened, the terrace parapet lowered to 1'-6" and new 1'-6" and 3'-6" parapets on the front balcony, the ground-floor toilet passage door widened, the gate pier lowered, and (mid-job) the walkway shortened to the house front with the porch strip extended to meet it. Refitted: TV wall moved clear of the wider rear window, kitchen tiles round the resized window, lounge art narrowed beside the widened window, curtains to the new window edges, balcony plants clear of the parapets, and the walkway steps now follow the walkway's front end from the plan file.
+
+42. Reply to "Publish a new share link for the walkthrough from this account?": `Yes, new link` (published as a private artifact; the link is kept in Claude's memory for this project, and every later change is republished to it)
+43. Pasted as a list:
+    ```
+    front stairs have railing inside, not the wall that you created
+    window on wall g-stair-front is in a single piece, started from ground floor to first floor, height and start sill is correct
+    in doll house view, ground floor hides behind the control panel , make it more zoomed out
+    editing in editor, make changes
+    top height of doors on g-stair-north wall is 8'0"
+    add roof boundary lower wall of height 3'
+
+    use blender to interior decorate the room
+    do not use the colourful sofa and bed set
+    every room has different elegant room designs
+    doors and windows are of same colour but other furniture must be of different colour from doors and windows
+    add name plate with home name "Manglam Vila" on g-front-pier wall
+    ```
+44. `g-stair-north, g-stair-front these walls are 8ft above the roof`
+45. `every wall hanged painting must be different`
+
+Notes on 43–45:
+- Front stair: the full-height wall between the flights is gone; glass railings with a timber handrail run up the inner side of both flights and round the turn, on both runs.
+- `g-stair-front`: its two stacked windows became one, from the 3'-0" sill up to the 30'-5" top already entered. `g-stair-north`: both openings 8'-0" high from their own floor (the ground-floor door, and the first-floor opening onto the balcony). Both walls now rise 8 ft above the roof (30'-10" from the ground-floor finish): the stair's cover on the roof. The roof landing's glass railings are left out where these walls stand. `g-stair-south` was not named and stays at roof height.
+- Roof parapet (3 ft): it had been missing along the whole road-side edge, because that edge was not cut at the stair landing's sides (see section 9).
+- Dollhouse: the camera stands further back and the picture is shifted up by half the control bar's height (`frameAboveBar` in `tour.js`), so the floor shown sits in the clear space above the bar.
+- Doors and windows: one material, `joinery` (dark timber in Modern and Warm luxury, white paint in Scandinavian); no furniture uses it. Furniture woods (`oak`, `ash`, `honey`) and stones (`travertine`, `marbleW`) are fixed and never the doors' colour. Wardrobes take their room's painted finish.
+- Each room has its own design (`DESIGN` in `furniture.js`): a calm palette, a wood, a stone and its own sofa, chair and bed shapes from Blender. For this house: ground hall oat linen and cognac leather; first-floor living ivory and charcoal; lounge slate and linen; first-floor master greige channel-tufted bed; ground master mushroom wingback; guest dove grey panel bed; children's sage arched single beds; terrace stone and charcoal. The style switch still changes the architecture, joinery, lamps, frames, accessories and the living rooms' sofa shape.
+- Name plate: dark polished stone, brass border and raised brass lettering in Garamond, on the road face of `g-front-pier` at eye level from the street. The home name is an argument to the Blender script.
+- Paintings: every frame gets its own picture (8 compositions × 10 calm palettes, drawn to the frame's proportions); each style hangs a different set.
+- The plan file was edited by script in the editor's own format (serve.render), with the editor's stamp check left in place: an editor page left open must be reloaded before its next save.
+
+46. Reply to "Run a speed check with the browser pane showing?": `Yes, check speed` (not done yet: the app throttled the page to one frame a second while the Claude window was behind other windows; see section 8)
+47. `g-lobby-kitchen and g-kitchen-west have windows at the end they are meeting at the corner these are combined corner window, adjust it because a wall is kind of visible from other side if reduce the wall size because it reduces the window length as well and all`
+48. `also add curtains and curtain rods to outer wall windows and doors there are some walls on which curtains are there but they arent visible, use colour pallete and use contrasting colour for curtains...use blender for this`
+
+Notes on 47–48:
+- Corner windows are found from the plan (`cornerWindows` in `shell.js`): two windows that reach into the square where an x wall and a y wall overlap, at the same sill and head, become one. Each glass runs to the other's glass line, one slim corner post replaces the two end frames, the sills meet without overlapping, and the overlap square is open between sill and head. Keep both walls running into the corner in the editor; there is no need to shorten either.
+- Curtains are found from the plan too (`curtainsFor` in `furniture.js`), so they follow the editor: every window, glazed door and door with a room on one side and the outdoors, a terrace, balcony or porch on the other gets a rod on two brackets with ball finials and two pleated drapes pulled back to its sides, on the room side. Drapes go to the floor, or to the sill where a window is above a counter. Toilets and washrooms keep frosted glass, clerestory windows stay bare, the front door (`g-entrance`) stays clear, and a corner window keeps its corner open (the two rods meet there). Colour: a deeper shade from the room's palette (`CURTAIN` in `furniture.js`), so it stands out from the walls; rooms without a design get warm taupe. The old pale sheer curtains were removed. Drape, rod, finial and bracket are Blender models; the rod and fittings follow the style's metal. Floor-length drapes give way to furniture standing where they hang (a nightstand beside a window), so curtains are placed after each floor's furniture.
+
+49. Pasted as a list:
+    ```
+    remove curtain and curtain rods from both kitchens
+    curtain and rod is not proper on g-entrance
+    children's room door's and windows' curtains are missing
+    lounge-north window curtain missing
+    hall-north window curtain missing
+    height of building across the road od manglam villa is high, blocking the doll house view
+    ```
+50. `also check editor`
+
+Notes on 49–50:
+- No curtains in kitchens, toilets, washrooms or the store.
+- Openings side by side on one wall (less than 1 ft apart, like a door between two narrow windows) share one rod, with a drape at each outer end. Open doorways count as openings. Drapes keep off a door only when its leaves stand open on the room side; closed glazed doors and outward-opening doors can be partly covered.
+- Furniture against the wall: each drape first moves to the nearest free stretch on its own side. If both cannot hang to the floor, both hang to the sill; if furniture still rises above the sill (bed heads either side of a window), they end just above it. Furniture blockers now carry their height for this.
+- The buildings across the road are one storey (12–14 ft) so they never block the dollhouse view.
+- Both editor tabs checked: connected to the plan files, every wall, opening and parapet railing drawn, no errors.
+
 ---
 
 ## 11. What is in `_kit\walkthrough-template`
@@ -307,7 +398,7 @@ How these were built, for reuse:
 | `js/furniture.js`, `js/furniture-ground.js` | Furniture for the first and ground floors |
 | `js/lighting.js` | Sky, sun and time of day, lamps, ceiling lights |
 | `js/music.js` | Background music made in code, with mute |
-| `js/models.js`, `js/models-data.js`, `blender/make_furniture.py` | Furniture models made in Blender, and their loader |
+| `js/models.js`, `js/models-data.js`, `blender/make_furniture.py` | Furniture models and fittings (railing parts, skirting) made in Blender, and their loader |
 | `js/tour.js`, `js/main.js` | Tour, labels, walking, dollhouse and controls; start-up |
 | `build.py` | Makes the single HTML file, or a share copy with `--share` |
 | `debug/` | Put the client's drawings here as `plan.png` (first floor) and `plan-ground.png` (ground floor) for the editor underlay |

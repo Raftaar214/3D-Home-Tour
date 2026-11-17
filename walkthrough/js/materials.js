@@ -186,6 +186,91 @@
     speckle(g, s, R, 5000, '255,255,255', 0.08);
   }
 
+  /* A painting w x h pixels, so every frame on the walls can be different. kind picks the
+     composition; pal = [ground, four paint colours]; R makes each one its own. */
+  function painting(g, w, h, R, pal, kind) {
+    const [bg, a, b, c, d] = pal, m = Math.min(w, h);
+    g.fillStyle = bg;
+    g.fillRect(0, 0, w, h);
+    g.globalAlpha = 1;
+    if (kind === 'landscape') { // dusk sky, a low sun, three ridges of hills
+      const sky = g.createLinearGradient(0, 0, 0, h);
+      sky.addColorStop(0, bg); sky.addColorStop(0.7, c); sky.addColorStop(1, c);
+      g.fillStyle = sky; g.fillRect(0, 0, w, h);
+      g.fillStyle = d; g.globalAlpha = 0.9;
+      g.beginPath(); g.arc(w * (0.25 + R() * 0.5), h * (0.32 + R() * 0.12), m * (0.07 + R() * 0.05), 0, 6.3); g.fill();
+      [a, b, d].forEach((col, k) => {
+        g.fillStyle = col; g.globalAlpha = 0.8 + k * 0.07;
+        const base = h * (0.5 + k * 0.15), ph = R() * 6, fr = 1 + R() * 2;
+        g.beginPath(); g.moveTo(0, h);
+        for (let x = 0; x <= w; x += w / 40) g.lineTo(x, base - Math.sin((x / w) * Math.PI * fr + ph) * h * (0.05 + 0.02 * k));
+        g.lineTo(w, h); g.closePath(); g.fill();
+      });
+    } else if (kind === 'field') { // colour field: two or three soft-edged blocks
+      const n = 2 + (R() < 0.5 ? 1 : 0);
+      for (let k = 0; k < n; k++) {
+        g.fillStyle = [a, b, c][k]; g.shadowColor = [a, b, c][k]; g.shadowBlur = m * 0.04; g.globalAlpha = 0.88;
+        const y0 = h * (0.08 + (k * 0.86) / n), hh = h * (0.86 / n - 0.05);
+        g.fillRect(w * 0.1, y0, w * 0.8, hh);
+      }
+      g.shadowBlur = 0;
+    } else if (kind === 'arches') { // nested arches rising from the bottom edge
+      const cx = w * (0.35 + R() * 0.3), base = h * 0.92, n = 4 + ((R() * 2) | 0), r0 = Math.min(w * 0.42, h * 0.75);
+      for (let k = 0; k < n; k++) {
+        g.fillStyle = [a, b, c, d, bg][k % 5];
+        const r = r0 * (1 - k / (n + 0.6));
+        g.beginPath(); g.moveTo(cx - r, base); g.arc(cx, base - r * 0.35, r, Math.PI, 0); g.lineTo(cx + r, base); g.closePath(); g.fill();
+      }
+      g.fillStyle = d; g.fillRect(0, base, w, h - base);
+    } else if (kind === 'lines') { // calm horizontal bands, as if brushed
+      let y = h * 0.06;
+      while (y < h * 0.94) {
+        const t = h * (0.02 + R() * 0.07);
+        g.fillStyle = [a, b, c, d][(R() * 4) | 0]; g.globalAlpha = 0.65 + R() * 0.3;
+        g.beginPath(); g.moveTo(w * 0.08, y);
+        for (let x = w * 0.08; x <= w * 0.92; x += w / 30) g.lineTo(x, y + (R() - 0.5) * t * 0.25);
+        for (let x = w * 0.92; x >= w * 0.08; x -= w / 30) g.lineTo(x, y + t + (R() - 0.5) * t * 0.25);
+        g.closePath(); g.fill();
+        y += t + h * (0.01 + R() * 0.03);
+      }
+    } else if (kind === 'botanical') { // a single stem with leaves, drawn simply
+      const sx = w * 0.5, sy = h * 0.92, top = h * 0.1;
+      g.strokeStyle = d; g.lineWidth = m * 0.012;
+      g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo(sx + w * (R() - 0.5) * 0.3, (sy + top) / 2, sx + w * (R() - 0.5) * 0.15, top); g.stroke();
+      const n = 7 + ((R() * 4) | 0);
+      for (let k = 0; k < n; k++) {
+        const t = 0.15 + (k / n) * 0.8, y = sy - (sy - top) * t, side = k % 2 ? 1 : -1, len = m * (0.16 + R() * 0.1) * (1.1 - t * 0.5);
+        g.save(); g.translate(sx, y); g.rotate(side * (0.6 + R() * 0.4) - Math.PI / 2 * side * 0.2);
+        g.fillStyle = [a, b, c][k % 3]; g.globalAlpha = 0.9;
+        g.beginPath(); g.ellipse(side * len * 0.55, 0, len * 0.55, len * 0.2, 0, 0, 6.3); g.fill();
+        g.restore();
+      }
+    } else if (kind === 'moon') { // a large disc, a small one, a horizon line
+      g.fillStyle = a; g.globalAlpha = 0.95;
+      g.beginPath(); g.arc(w * (0.4 + R() * 0.2), h * (0.38 + R() * 0.1), m * (0.26 + R() * 0.08), 0, 6.3); g.fill();
+      g.fillStyle = b; g.beginPath(); g.arc(w * (0.15 + R() * 0.7), h * (0.15 + R() * 0.2), m * 0.06, 0, 6.3); g.fill();
+      g.fillStyle = c; g.fillRect(0, h * 0.78, w, h * 0.22);
+      g.fillStyle = d; g.fillRect(0, h * 0.78, w, h * 0.012);
+    } else if (kind === 'grid') { // blocks on a fine grid, with a few left plain
+      const cols = 3 + ((R() * 2) | 0), rows = Math.max(3, Math.round((cols * h) / w)), gw = (w * 0.84) / cols, gh = (h * 0.84) / rows;
+      for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+        if (R() < 0.3) continue;
+        g.fillStyle = [a, b, c, d][(R() * 4) | 0]; g.globalAlpha = 0.85;
+        g.fillRect(w * 0.08 + i * gw + gw * 0.06, h * 0.08 + j * gh + gh * 0.06, gw * 0.88, gh * 0.88);
+      }
+    } else { // abstract: overlapping shapes
+      for (let i = 0; i < 7; i++) {
+        g.fillStyle = [a, b, c, d][(R() * 4) | 0];
+        g.globalAlpha = 0.75 + R() * 0.25;
+        if (R() < 0.5) { g.beginPath(); g.arc(R() * w, R() * h, m * (0.1 + R() * 0.25), R() * 6.3, R() * 6.3); g.closePath(); g.fill(); }
+        else g.fillRect(R() * w * 0.8, R() * h * 0.8, w * (0.1 + R() * 0.4), h * (0.08 + R() * 0.3));
+      }
+    }
+    g.globalAlpha = 1;
+    // canvas grain over everything
+    for (let k = 0; k < (w * h) / 40; k++) { g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'; g.fillRect(R() * w, R() * h, 1.5, 1.5); }
+  }
+
   function jaali(g, s) {
     g.clearRect(0, 0, s, s);
     g.fillStyle = '#3b2f28';
@@ -216,7 +301,7 @@
     g.globalCompositeOperation = 'source-over';
   }
 
-  A.texKit = { tex, marble, wood, rug, art };
+  A.texKit = { tex, marble, wood, rug, art, painting, rng };
 
   A.buildMaterials = function () {
     const M = {}, S = {}; // S = feet per texture repeat, used for world-scale UVs
@@ -251,6 +336,17 @@
     M.teak = std({ map: tTeak, roughness: 0.55 }); S.teak = 3;
     M.teakV = std({ map: tTeakV, roughness: 0.55 }); S.teakV = 3;
     M.walnut = std({ map: tWalnut, roughness: 0.5 }); S.walnut = 3;
+    // Doors and window frames: one material, coloured by the style (styles.js). No furniture uses it.
+    M.joinery = std({ map: tWalnut, roughness: 0.45 }); S.joinery = 3;
+    // Furniture woods and stones: the same in every style, and never the colour of the doors.
+    M.oak = std({ map: tex(512, (g, s, R) => wood(g, s, R, 34, 32, 60, 512, 0, 3), 25), roughness: 0.5 }); S.oak = 3;
+    M.ash = std({ map: tex(512, (g, s, R) => wood(g, s, R, 40, 20, 74, 512, 0, 3), 26), roughness: 0.5 }); S.ash = 3;
+    M.honey = std({ map: tex(512, (g, s, R) => wood(g, s, R, 30, 46, 46, 512, 0, 3), 27), roughness: 0.46 }); S.honey = 3;
+    M.travertine = std({ map: tex(512, (g, s, R) => marble(g, s, R, '#dacfbb', '170,150,122', 1, 3), 28), roughness: 0.55 }); S.travertine = 3;
+    // the gate pier's name plate: polished dark stone, brass lettering (the same in every style)
+    M.plaque = std({ color: 0x23201d, roughness: 0.22, metalness: 0.1, envMapIntensity: 0.9 });
+    M.gilt = std({ color: 0xc9a45c, roughness: 0.28, metalness: 1.0 });
+    M.marbleW = std({ map: tex(512, (g, s, R) => marble(g, s, R, '#f1efeb', '118,116,114', 2, 2), 29), roughness: 0.16, envMapIntensity: 0.6 }); S.marbleW = 3;
     M.fluted = std({ map: tFlute, roughness: 0.6 }); S.fluted = 2.2;
     M.frame = std({ color: 0x2f2a27, roughness: 0.45, metalness: 0.6 });
     M.metal = std({ color: 0x3a302a, roughness: 0.5, metalness: 0.7 });

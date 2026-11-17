@@ -211,6 +211,14 @@
       if (w.hidden) return;
       out.push(rect(w.r, `data-kind="wall" data-i="${i}" fill="${isLow(w) ? 'var(--low)' : 'var(--wall)'}" ${hit}`));
     });
+    // walls with a railing on top: a dotted white line down the middle
+    plan.walls.forEach((w) => {
+      if (w.hidden) return;
+      const zr = zRange(w, [0, plan.H]);
+      if (!A.wallRail(w.r, zr[0], zr[1], w.rail, w.railTop, plan.areas)) return;
+      const c = (w.r[across(w)[0]] + w.r[across(w)[1]]) / 2, dots = `stroke="#fff" stroke-width="${1.8 * u}" stroke-dasharray="${1.6 * u} ${2.4 * u}" style="pointer-events:none"`;
+      out.push(w.ax === 'x' ? `<path d="M${w.r[0]} ${c} H${w.r[2]}" ${dots}/>` : `<path d="M${c} ${w.r[1]} V${w.r[3]}" ${dots}/>`);
+    });
     // openings
     plan.walls.forEach((w, i) => {
       if (w.hidden) return;
@@ -298,6 +306,15 @@
       field('kind', 'Height', hk, 'select', kinds);
       if (hk === 'low') field('top', 'Low wall height', w.z[1]);
       if (hk === 'custom' || hk === 'roof') { const zr = zRange(w, [0, plan.H]); field('zb', 'Bottom', zr[0]); field('zt', 'Top', zr[1]); rows.push({ note: levelHint() }); }
+      if (hk === 'low' || hk === 'custom') { // a railing on top of the wall
+        const zr = zRange(w, [0, plan.H]), rr = A.wallRail(w.r, zr[0], zr[1], w.rail, w.railTop, plan.areas);
+        field('rail', 'Railing on top', A.RAIL_KINDS[w.rail] ? w.rail : 'auto', 'select', Object.assign({ auto: 'Automatic' }, A.RAIL_KINDS));
+        if (rr) field('railTop', 'Railing top (from floor)', rr.top);
+        rows.push({ note: rr ? 'In 3D: ' + A.RAIL_KINDS[rr.kind].toLowerCase() + ' railing from the top of this wall up to ' + fmt(rr.top) + ' above the floor.'
+          : w.rail === 'none' ? 'No railing on this wall.'
+          : A.RAIL_KINDS[w.rail] ? 'No railing shows: the wall must start at the floor and be lower than the railing top.'
+          : 'Automatic: a low wall (under 3 ft) along a terrace or balcony gets that area\'s railing on top.' });
+      }
       rows.push({ note: x ? 'Runs north to south.' : 'Runs rear to front.' });
     } else if (sel.kind === 'op') {
       const o = it, w = plan.walls[sel.i], x = w.ax === 'x';
@@ -336,6 +353,11 @@
       field('y', 'Y (rear edge)', a.r[1]);
       field('pw', 'Width (north to south)', a.r[2] - a.r[0]);
       field('pd', 'Depth (rear to front)', a.r[3] - a.r[1]);
+      if (!isVoid && !GROUND && (a.kind === 'terrace' || a.kind === 'balcony')) {
+        field('rail', 'Railing on open sides', A.RAIL_KINDS[a.rail] ? a.rail : 'jaali', 'select', A.RAIL_KINDS);
+        if (a.rail !== 'none') field('railTop', 'Railing height', +a.railTop || A.RAIL_TOP);
+        rows.push({ note: 'Low walls (parapets) along its edge carry the same railing on top, unless the wall is set otherwise.' });
+      }
       rows.push({ note: isVoid ? 'The floor fills in wherever this opening is made smaller, and glass railing follows its edges. The main stair stays where it is.' : GROUND ? 'The paved floor follows this outline. A car porch sits 1\'-6" below the house floor; the steps and furniture do not move with it.' : 'The floor and the railing on its open sides follow this outline. Furniture on it does not move.' });
     } else {
       const p = it;
@@ -390,6 +412,8 @@
         else delete w.z;
       }
       if (key === 'top') w.z = [0, Math.max(0.5, v)];
+      if (key === 'rail') { if (v === 'auto') delete w.rail; else w.rail = v; }
+      if (key === 'railTop') { const t = Math.min(Math.max(v, 1), 8); if (Math.abs(t - A.RAIL_TOP) < 0.01) delete w.railTop; else w.railTop = r4(t); }
       if (key === 'zb' || key === 'zt') {
         const zr = zRange(w, [0, plan.H]);
         if (key === 'zb') zr[0] = Math.min(v, zr[1] - 0.25); else zr[1] = Math.max(v, zr[0] + 0.25);
@@ -418,6 +442,8 @@
       if (key === 'tall') { if (v === 'full') delete p.h; else p.h = 7; }
       if (key === 'wh') p.h = Math.min(Math.max(1, v), plan.H);
       if (key === 'mirror') { if (v === '1') p.mirror = true; else delete p.mirror; }
+      if (key === 'rail') { if (v === 'jaali') delete p.rail; else p.rail = v; }
+      if (key === 'railTop') { const t = Math.min(Math.max(v, 1), 8); if (Math.abs(t - A.RAIL_TOP) < 0.01) delete p.railTop; else p.railTop = r4(t); }
       if (sel.kind === 'pillar') {
         if (key === 'kind') { if (v === 'full') delete p.z; else { const zr = zRange(p, [0, plan.H]); p.z = [zToken(zr[0]), zToken(zr[1])]; } }
         if (key === 'zb' || key === 'zt') {

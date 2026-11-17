@@ -9,6 +9,9 @@ in the walkthrough's axes):
   bedding          duvet and runner draped over the mattress with Blender's cloth simulation
   plants           potted plants with real leaf shapes (two sizes)
   lamps            turned lamp shades, a table-lamp base, a pendant dome
+  fittings         railing parts (chamfered post, pyramid cap, round bar, rounded handrail) and
+                   a 4" skirting with a rounded top edge. These are made one foot long (or high)
+                   and the walkthrough stretches them to each railing run and each wall.
 
 Every model is split into parts by role ("fab", "pipe", "pot", "leaf", "shade", ...). The
 walkthrough paints each role with a material of the chosen style, so one model serves all
@@ -29,6 +32,7 @@ from mathutils import Matrix, Vector
 
 ARGS = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 OUT = ARGS[0] if ARGS else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'js', 'models-data.js')
+HOME_NAME = ARGS[1] if len(ARGS) > 1 else 'Manglam Vila'   # lettering on the gate pier's name plate
 random.seed(11)
 PI = math.pi
 
@@ -184,6 +188,85 @@ def leaf(name, length, width, fold=0.25, droop=0.5, rows=7, cols=4, tip=1.0):
             a = i * (cols + 1) + j
             faces.append((a, a + 1, a + cols + 2, a + cols + 1))
     return from_data(name, verts, faces)
+
+
+def bake(ob):
+    """The object with its modifiers applied, as a plain mesh object (custom normals kept)."""
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    nb = link(bpy.data.objects.new(ob.name + '_m', me))
+    nb.matrix_world = ob.matrix_world.copy()
+    bpy.data.objects.remove(ob)
+    return nb
+
+
+def rounded(ob, r, seg=3, angle=None):
+    """Round an object's edges with a bevel that keeps flat faces flat, then bake it."""
+    if r > 0.003:
+        bv = ob.modifiers.new('round', 'BEVEL')
+        bv.width, bv.segments = r, seg
+        if angle is None:
+            bv.limit_method = 'NONE'
+        else:
+            bv.limit_method, bv.angle_limit = 'ANGLE', math.radians(angle)
+        bv.harden_normals = True
+    return bake(ob)
+
+
+def sweep(name, prof, axis, a0, a1, sharp_deg=50, bevel=0.0, seg=3):
+    """A closed profile swept straight along one axis, with end caps: a moulding, a bar, a
+    table top or a headboard. axis 'x': prof = [(y, z), ...] from x = a0 to a1; 'y': prof =
+    [(x, z), ...] from y = a0 to a1; 'z': prof = [(x, y), ...] from z = a0 to a1. Faces turn
+    outward. bevel > 0 rounds the outline's edges (soft, upholstered or eased)."""
+    bm = bmesh.new()
+    mk = {'x': lambda p, q, t: (t, p, q), 'y': lambda p, q, t: (p, t, q), 'z': lambda p, q, t: (p, q, t)}[axis]
+    a = [bm.verts.new(mk(p, q, a0)) for p, q in prof]
+    b = [bm.verts.new(mk(p, q, a1)) for p, q in prof]
+    n = len(prof)
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((a[i], a[j], b[j], b[i]))
+    bm.faces.new(a[::-1])
+    bm.faces.new(b)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.normal_update()
+    if bevel > 0:
+        return rounded(from_bmesh(name, bm, smooth=True), bevel, seg, angle=35)
+    return from_bmesh(name, bm, smooth=True, sharp_deg=sharp_deg)
+
+
+def rbox(x0, x1, y0, y1, z0, z1, r=0.03, seg=3, name='box'):
+    """A box with rounded edges, flat faces kept flat. Blender axes (z up, front toward -y)."""
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    for v in bm.verts:
+        v.co = Vector((x0 + (v.co.x + 0.5) * (x1 - x0), y0 + (v.co.y + 0.5) * (y1 - y0), z0 + (v.co.z + 0.5) * (z1 - z0)))
+    ob = from_bmesh(name, bm, smooth=True)
+    return rounded(ob, min(r, (x1 - x0) * 0.48, (y1 - y0) * 0.48, (z1 - z0) * 0.48), seg)
+
+
+def arc(cx, cz, r, a0, a1, n):
+    """Points on a circle in the front view (x, z), from angle a0 to a1 (degrees), n steps."""
+    return [(cx + r * math.cos(math.radians(a0 + (a1 - a0) * k / n)), cz + r * math.sin(math.radians(a0 + (a1 - a0) * k / n))) for k in range(n + 1)]
+
+
+def leg(x, y, h, r_top=0.065, r_foot=0.04, seg=10):
+    """A tapered round leg standing on z = 0."""
+    ob = lathe('leg', [(0.0, 0.0), (r_foot, 0.0), (r_top, h), (0.0, h)], seg=seg, sharp_deg=60)
+    ob.location = (x, y, 0)
+    bpy.context.view_layer.update()
+    return ob
+
+
+def placed(ob, loc, rot=(0, 0, 0)):
+    ob.location, ob.rotation_euler = loc, rot
+    bpy.context.view_layer.update()
+    return ob
+
+
+def cushion_obj(name, w, d, t, r=0.14, crown=0.04, puff=0.03):
+    """A loose cushion w wide, d deep, t thick, lying flat, centred on the origin."""
+    return soft_box(name, w / 2, d / 2, t / 2, min(r, w / 2 - 0.02, d / 2 - 0.02), min(r * 0.9, t / 2 - 0.01), crown=crown, puff=puff, wobble=0.004)
 
 
 def join(objs, name):
@@ -451,6 +534,345 @@ def make_lamps():
     add_model('dome', [('shade', dome), ('bulb', lathe('b', [(0.0, -0.2), (0.12, -0.26), (0.13, -0.38), (0.0, -0.45)], seg=14))])
 
 
+def make_fittings():
+    """Railing parts and skirting. Each is one foot long (or high), so the walkthrough can
+    stretch it along a railing run or a wall without changing its cross-section."""
+    # railing post: 2" square with chamfered edges, 1 ft high (stretched to the post height)
+    reset()
+    s, c = 0.08, 0.016
+    post = sweep('post', [(s - c, -s), (s, -s + c), (s, s - c), (s - c, s), (-s + c, s), (-s, s - c), (-s, -s + c), (-s + c, -s)], 'z', 0.0, 1.0, sharp_deg=30)
+    add_model('rail_post', [('metal', post)])
+    # post cap: a low pyramid on a square collar, for the end posts
+    reset()
+    r = 0.105 * math.sqrt(2)
+    cap = lathe('cap', [(0.0, 0.0), (r, 0.0), (r, 0.03), (r * 0.42, 0.075), (0.0, 0.082)], seg=4, cap_bottom=True, sharp_deg=20)
+    cap.rotation_euler = (0, 0, PI / 4)
+    bpy.context.view_layer.update()
+    add_model('rail_cap', [('metal', cap)])
+    # baluster bar: ¾" round, 1 ft high, eased ends
+    reset()
+    bar = lathe('bar', [(0.0, 0.0), (0.027, 0.0), (0.032, 0.006), (0.032, 0.994), (0.027, 1.0), (0.0, 1.0)], seg=10, sharp_deg=60)
+    add_model('rail_bar', [('metal', bar)])
+    # handrail: 2½" wide, 1¼" high, a narrow foot and a rounded top; 1 ft long along x
+    reset()
+    prof = [(-0.055, 0.0), (0.055, 0.0), (0.1, 0.03)]
+    prof += [(0.1 * math.cos(PI * k / 10), 0.03 + 0.072 * math.sin(PI * k / 10)) for k in range(1, 10)]
+    prof += [(-0.1, 0.03)]
+    top = sweep('handrail', prof, 'x', -0.5, 0.5, sharp_deg=40)
+    add_model('rail_top', [('metal', top)])
+    # skirting: 4" high, ½" proud of the wall, front top edge rounded; 1 ft long along x.
+    # Back on the wall at walkthrough z = 0 (Blender y = 0), front toward +z (Blender -y).
+    reset()
+    T_, H_, R_ = 0.042, 4 / 12, 0.028
+    prof = [(0.0, 0.0), (-T_, 0.0), (-T_, H_ - R_)]
+    prof += [(-(T_ - R_) - R_ * math.cos(PI / 2 * k / 6), (H_ - R_) + R_ * math.sin(PI / 2 * k / 6)) for k in range(1, 7)]
+    prof += [(0.0, H_)]
+    sk = sweep('skirting', prof, 'x', -0.5, 0.5, sharp_deg=50)
+    add_model('skirting', [('tile', sk)], recentre=False)
+
+
+# --------------------------------------------------------------------------------------------
+# interior pieces. Blender axes while modelling: x across, y depth (front toward -y), z up.
+# Parts by role, so each room paints them in its own palette:
+#   body / cushion / leg (sofas, chairs), head / base / mattress / leg (beds),
+#   fab / wood (dining chair, bench), top / base (tables), body / front / top / pull / leg (cases).
+def sofa_model(name, W, kind):
+    """kind 'track': slim square arms, a tight back, tapered legs.
+    kind 'tux': arms as high as the back, deep seat, on a recessed plinth."""
+    reset()
+    D = 3.15
+    body, cush, base = [], [], []
+    if kind == 'track':
+        foot, armW, armH, backH, backD = 0.45, 0.38, 2.0, 2.45, 0.42
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                base.append(leg(sx * (W / 2 - 0.3), sy * (D / 2 - 0.3), foot, 0.07, 0.045))
+    else:
+        foot, armW, armH, backH, backD = 0.32, 0.55, 2.3, 2.3, 0.5
+        base.append(rbox(-W / 2 + 0.14, W / 2 - 0.14, -D / 2 + 0.14, D / 2 - 0.14, 0.0, foot, 0.03))
+    deck = foot + 0.52
+    body.append(rbox(-W / 2, W / 2, -D / 2, D / 2, foot, deck, 0.07))
+    body.append(rbox(-W / 2, W / 2, D / 2 - backD, D / 2, foot, backH, 0.12))
+    for sx in (-1, 1):
+        x0, x1 = (-W / 2, -W / 2 + armW) if sx < 0 else (W / 2 - armW, W / 2)
+        body.append(rbox(x0, x1, -D / 2, D / 2 - 0.05, foot, armH, 0.11 if kind == 'track' else 0.16))
+    inner = W - 2 * armW
+    n = max(1, int(round(inner / 2.25)))
+    cw = inner / n
+    seat_d = D - backD - 0.06
+    for i in range(n):
+        x = -inner / 2 + cw * (i + 0.5)
+        cush.append(placed(cushion_obj('seat', cw - 0.03, seat_d, 0.42), (x, -D / 2 + seat_d / 2 + 0.02, deck + 0.21)))
+        bh = (backH - deck - 0.42) + 0.35
+        bk = cushion_obj('back', cw - 0.05, bh, 0.36, r=0.16, crown=0.05, puff=0.05)
+        cush.append(placed(bk, (x, D / 2 - backD - 0.16, deck + 0.42 + bh / 2 - 0.05), (PI / 2 - 0.13, 0, 0)))
+    add_model(name, [('body', join(body, 'body')), ('cushion', join(cush, 'cushions')), ('leg', join(base, 'legs') if len(base) > 1 else base[0])], recentre=False)
+
+
+def make_sofas():
+    for nm, W, kind in (('sofa_track3', 7.0, 'track'), ('sofa_track2', 5.2, 'track'), ('chair_track', 2.9, 'track'),
+                        ('sofa_tux3', 7.0, 'tux'), ('sofa_tux2', 5.2, 'tux'), ('chair_tux', 3.0, 'tux')):
+        sofa_model(nm, W, kind)
+
+
+def make_lounge_chair():
+    """An armless lounge chair: a deep cushioned seat and a tall, softly arched back that leans
+    back, on four splayed tapered legs."""
+    reset()
+    body, cush, base = [], [], []
+    W, D, foot = 2.5, 2.7, 0.55
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            base.append(placed(leg(0, 0, foot + 0.05, 0.06, 0.04), (sx * (W / 2 - 0.3), sy * (D / 2 - 0.3), 0), (sy * 0.12, -sx * 0.12, 0)))
+    body.append(rbox(-W / 2, W / 2, -D / 2, D / 2, foot, foot + 0.4, 0.08))
+    cush.append(placed(cushion_obj('seat', W - 0.06, D - 0.5, 0.38), (0, -0.22, foot + 0.4 + 0.19)))
+    outline = [(-W / 2, 0.0), (W / 2, 0.0), (W / 2, 1.6)] + arc(0, 1.6, W / 2, 0, 180, 14)[1:]
+    back = sweep('back', outline, 'y', -0.2, 0.2, bevel=0.12)
+    body.append(placed(back, (0, D / 2 - 0.25, foot + 0.3), (-0.2, 0, 0)))
+    add_model('chair_lounge', [('body', join(body, 'body')), ('cushion', cush[0]), ('leg', join(base, 'legs'))], recentre=False)
+
+
+def bed_model(name, W, L, kind):
+    """A bed with its mattress centred on the origin, base on z = 0, headboard toward +y
+    (the walkthrough's -z). kind: 'channel' (tall channel-tufted, on a plinth), 'wing'
+    (wingback, on legs), 'panel' (plain upholstered panel, on a plinth), 'arch' (arched, single)."""
+    reset()
+    head, base, mat, legs = [], [], [], []
+    lift = 0.3
+    base.append(rbox(-W / 2 - 0.16, W / 2 + 0.16, -L / 2 - 0.12, L / 2, lift, lift + 0.7, 0.12))
+    mat.append(rbox(-W / 2, W / 2, -L / 2, L / 2 - 0.06, lift + 0.7, lift + 1.45, 0.14))
+    if kind in ('channel', 'panel'):
+        legs.append(rbox(-W / 2 + 0.1, W / 2 - 0.1, -L / 2 + 0.2, L / 2 - 0.25, 0.0, lift, 0.02))
+    else:
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                legs.append(leg(sx * (W / 2 - 0.1), sy * (L / 2 - 0.25), lift + 0.05, 0.07, 0.05))
+    Wb = W / 2 + (0.45 if W > 4 else 0.25)
+    if kind == 'channel':
+        head.append(rbox(-Wb, Wb, L / 2, L / 2 + 0.3, lift, 4.9, 0.06))
+        n = 11 if W > 4 else 6
+        cw = 2 * Wb / n
+        for i in range(n):
+            ch = cushion_obj('ch', cw - 0.02, 3.1, 0.24, r=0.1, crown=0.05, puff=0.02)
+            head.append(placed(ch, (-Wb + cw * (i + 0.5), L / 2 - 0.08, 3.3), (PI / 2, 0, 0)))
+    elif kind == 'wing':
+        top, R = 4.5, 0.85
+        outline = [(-Wb, lift), (Wb, lift), (Wb, top - R)] + arc(Wb - R, top - R, R, 0, 90, 6)[1:] + arc(-Wb + R, top - R, R, 90, 180, 6)
+        head.append(sweep('head', outline, 'y', L / 2 - 0.05, L / 2 + 0.4, bevel=0.14))
+        for sx in (-1, 1):
+            wo = [(-0.22, lift), (0.22, lift), (0.22, 3.0)] + arc(0, 3.0, 0.22, 0, 180, 6)[1:]
+            wing = sweep('wing', wo, 'y', -0.85, 0.0, bevel=0.1)
+            head.append(placed(wing, (sx * (Wb - 0.25), L / 2 + 0.05, 0)))
+    elif kind == 'panel':
+        head.append(rbox(-Wb, Wb, L / 2, L / 2 + 0.35, lift, 4.1, 0.2))
+        head.append(rbox(-Wb + 0.25, Wb - 0.25, L / 2 - 0.06, L / 2 + 0.05, 1.9, 3.85, 0.1))
+    else:  # arch
+        top = 4.0
+        outline = [(-Wb, lift), (Wb, lift), (Wb, top - Wb)] + arc(0, top - Wb, Wb, 0, 180, 18)[1:]
+        head.append(sweep('head', outline, 'y', L / 2 - 0.05, L / 2 + 0.32, bevel=0.12))
+    add_model(name, [('head', join(head, 'head') if len(head) > 1 else head[0]), ('base', base[0]), ('mattress', mat[0]),
+                     ('leg', join(legs, 'legs') if len(legs) > 1 else legs[0])], recentre=False)
+
+
+def make_beds():
+    for nm, W, L, kind in (('bed_channel', 6.0, 6.75, 'channel'), ('bed_wing', 6.0, 6.75, 'wing'),
+                           ('bed_panel', 6.0, 6.75, 'panel'), ('bed_arch', 3.4, 6.5, 'arch')):
+        bed_model(nm, W, L, kind)
+
+
+def make_dining():
+    # upholstered dining chair: tapered legs, eased seat frame, padded seat, arched padded back
+    reset()
+    fab, wood = [], []
+    W, D, sh = 1.6, 1.7, 1.55
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            wood.append(leg(sx * (W / 2 - 0.13), sy * (D / 2 - 0.13), sh - 0.12, 0.06, 0.04))
+    wood.append(rbox(-W / 2, W / 2, -D / 2, D / 2, sh - 0.2, sh - 0.06, 0.025))
+    fab.append(placed(cushion_obj('seat', W - 0.06, D - 0.08, 0.2, r=0.1, crown=0.03), (0, 0, sh + 0.04)))
+    outline = [(-W / 2 + 0.04, 0.0), (W / 2 - 0.04, 0.0), (W / 2 - 0.04, 0.95)] + arc(0, 0.95, W / 2 - 0.04, 0, 180, 12)[1:]
+    back = sweep('back', outline, 'y', -0.1, 0.1, bevel=0.07)
+    fab.append(placed(back, (0, D / 2 - 0.1, sh + 0.12), (-0.12, 0, 0)))
+    for sx in (-1, 1):
+        wood.append(rbox(sx * (W / 2 - 0.2) - 0.05, sx * (W / 2 - 0.2) + 0.05, D / 2 - 0.16, D / 2 - 0.04, sh - 0.1, sh + 0.45, 0.02))
+    add_model('chair_dining', [('fab', join(fab, 'fab')), ('wood', join(wood, 'wood'))], recentre=False)
+    # dining table: a racetrack top with an eased edge on two turned pedestals
+    reset()
+    W, D, H = 5.0, 3.1, 2.5
+    top = sweep('top', [(p[0], p[1]) for p in rounded_rect_path(W / 2, D / 2, 1.25, 0, 48)], 'z', H - 0.15, H, bevel=0.035)
+    peds = []
+    for sx in (-1, 1):
+        ped = lathe('ped', [(0.0, 0.0), (0.62, 0.0), (0.64, 0.05), (0.42, 0.22), (0.26, 0.55), (0.24, H - 0.6), (0.34, H - 0.25), (0.42, H - 0.15), (0.0, H - 0.15)], seg=28, sharp_deg=40)
+        peds.append(placed(ped, (sx * 1.25, 0, 0)))
+    peds.append(rbox(-1.25, 1.25, -0.12, 0.12, 0.35, 0.55, 0.03))
+    add_model('table_dining', [('top', top), ('base', join(peds, 'base'))], recentre=False)
+
+
+def make_tables():
+    # round coffee table: a thick top over a recessed, gently waisted drum
+    reset()
+    top = lathe('top', [(0.0, 1.15), (1.45, 1.15), (1.5, 1.19), (1.5, 1.27), (1.46, 1.31), (0.0, 1.31)], seg=56, sharp_deg=40)
+    drum = lathe('drum', [(0.0, 0.0), (1.05, 0.0), (1.1, 0.06), (0.98, 0.6), (1.05, 1.15), (0.0, 1.15)], seg=56, sharp_deg=50)
+    add_model('table_coffee', [('top', top), ('base', drum)])
+    # rectangular coffee table: eased slab top on a recessed plinth
+    reset()
+    add_model('table_coffee_rect', [('top', rbox(-2.1, 2.1, -1.15, 1.15, 1.12, 1.27, 0.035)), ('base', rbox(-1.7, 1.7, -0.75, 0.75, 0.0, 1.12, 0.05))])
+    # side table: round top on a slim turned pedestal
+    reset()
+    top = lathe('top', [(0.0, 1.86), (0.78, 1.86), (0.8, 1.9), (0.78, 1.95), (0.0, 1.95)], seg=40, sharp_deg=40)
+    ped = lathe('ped', [(0.0, 0.0), (0.5, 0.0), (0.52, 0.04), (0.14, 0.12), (0.08, 0.6), (0.06, 1.3), (0.11, 1.86), (0.0, 1.86)], seg=24, sharp_deg=50)
+    add_model('table_side', [('top', top), ('base', ped)])
+
+
+def make_cases():
+    # nightstand: two drawers with recessed fronts and slim pulls, on short tapered legs
+    reset()
+    W, D, h0, h1 = 1.9, 1.45, 0.45, 2.0
+    body = rbox(-W / 2, W / 2, -D / 2, D / 2, h0, h1, 0.05)
+    fronts = [rbox(-W / 2 + 0.06, W / 2 - 0.06, -D / 2 - 0.02, -D / 2 + 0.02, z0, z1, 0.015) for z0, z1 in ((h0 + 0.06, (h0 + h1) / 2 - 0.02), ((h0 + h1) / 2 + 0.02, h1 - 0.06))]
+    pulls = [rbox(-0.3, 0.3, -D / 2 - 0.07, -D / 2 - 0.02, z - 0.025, z + 0.025, 0.012) for z in ((h0 + h1) / 2 - 0.2, h1 - 0.25)]
+    legs = [leg(sx * (W / 2 - 0.14), sy * (D / 2 - 0.14), h0 + 0.02, 0.05, 0.035) for sx in (-1, 1) for sy in (-1, 1)]
+    add_model('nightstand', [('body', body), ('front', join(fronts, 'fronts')), ('pull', join(pulls, 'pulls')), ('leg', join(legs, 'legs'))])
+    # sideboard: a reeded front between plain ends, a thin overhanging top, tapered legs
+    reset()
+    W, D, h0, h1 = 5.4, 1.5, 0.55, 2.55
+    body = rbox(-W / 2, W / 2, -D / 2, D / 2, h0, h1, 0.04)
+    top = rbox(-W / 2 - 0.05, W / 2 + 0.05, -D / 2 - 0.05, D / 2, h1, h1 + 0.1, 0.03)
+    reeds = []
+    nr = 44
+    for i in range(nr):
+        x = -W / 2 + 0.25 + (W - 0.5) * (i + 0.5) / nr
+        rd = lathe('reed', [(0.0, h0 + 0.1), (0.05, h0 + 0.1), (0.05, h1 - 0.1), (0.0, h1 - 0.1)], seg=8, sharp_deg=80)
+        reeds.append(placed(rd, (x, -D / 2 + 0.01, 0)))
+    pulls = [rbox(x - 0.04, x + 0.04, -D / 2 - 0.1, -D / 2 - 0.04, (h0 + h1) / 2 - 0.35, (h0 + h1) / 2 + 0.35, 0.02) for x in (-0.12, 0.12)]
+    legs = [leg(sx * (W / 2 - 0.25), sy * (D / 2 - 0.2), h0 + 0.02, 0.06, 0.04) for sx in (-1, 1) for sy in (-1, 1)]
+    add_model('console', [('body', body), ('top', top), ('front', join(reeds, 'reeds')), ('pull', join(pulls, 'pulls')), ('leg', join(legs, 'legs'))])
+    # bench for the foot of a bed: a deep padded top on a slim frame
+    reset()
+    W, D = 4.4, 1.5
+    fab = placed(cushion_obj('seat', W, D, 0.42, r=0.14, crown=0.03), (0, 0, 1.33))
+    wood = [rbox(-W / 2 + 0.05, W / 2 - 0.05, -D / 2 + 0.05, D / 2 - 0.05, 1.0, 1.12, 0.02)]
+    wood += [leg(sx * (W / 2 - 0.2), sy * (D / 2 - 0.2), 1.02, 0.06, 0.04) for sx in (-1, 1) for sy in (-1, 1)]
+    add_model('bench', [('fab', fab), ('wood', join(wood, 'wood'))])
+
+
+def make_decor():
+    reset()
+    add_model('vase_tall', [('ceramic', lathe('v', [(0.0, 0.0), (0.16, 0.0), (0.2, 0.04), (0.3, 0.45), (0.31, 0.75), (0.2, 1.15), (0.11, 1.42), (0.13, 1.55), (0.11, 1.55), (0.09, 1.42), (0.0, 1.38)], seg=28, sharp_deg=70))])
+    reset()
+    add_model('vase_round', [('ceramic', lathe('v', [(0.0, 0.0), (0.18, 0.0), (0.36, 0.2), (0.41, 0.42), (0.33, 0.66), (0.17, 0.8), (0.18, 0.86), (0.15, 0.86), (0.0, 0.8)], seg=28, sharp_deg=70))])
+    reset()
+    add_model('bowl', [('ceramic', lathe('b', [(0.0, 0.0), (0.22, 0.0), (0.42, 0.1), (0.55, 0.24), (0.53, 0.25), (0.41, 0.13), (0.0, 0.05)], seg=32, sharp_deg=70))])
+    reset()
+    covers, pages = [], []
+    z = 0.0
+    for w, d, t, rot in ((1.05, 0.78, 0.1, 0.0), (0.98, 0.72, 0.08, 0.12), (0.9, 0.66, 0.09, -0.07)):
+        c = rbox(-w / 2, w / 2, -d / 2, d / 2, z, z + t, 0.012)
+        p = rbox(-w / 2 + 0.03, w / 2 - 0.005, -d / 2 + 0.01, d / 2 - 0.01, z + 0.012, z + t - 0.012, 0.004)
+        for o in (c, p):
+            o.rotation_euler = (0, 0, rot)
+        covers.append(c)
+        pages.append(p)
+        z += t
+    bpy.context.view_layer.update()
+    add_model('books', [('cover', join(covers, 'covers')), ('pages', join(pages, 'pages'))])
+    reset()
+    holders = [placed(lathe('h', [(0.0, 0.0), (0.12, 0.0), (0.07, 0.05), (0.04, 0.25), (0.08, 0.3), (0.0, 0.3)], seg=16, sharp_deg=60), (dx, 0, 0)) for dx in (-0.14, 0.16)]
+    wax = [placed(lathe('c', [(0.0, 0.0), (0.035, 0.0), (0.035, hh), (0.0, hh)], seg=10, sharp_deg=60), (dx, 0, 0.3)) for dx, hh in ((-0.14, 0.7), (0.16, 0.5))]
+    add_model('candles', [('holder', join(holders, 'holders')), ('wax', join(wax, 'wax'))])
+
+
+def make_curtains():
+    """Curtain pieces. drape: one panel gathered into soft vertical folds, 1 ft wide and 1 ft high
+    (the walkthrough stretches it to each panel and drop), its back on the rod line at walkthrough
+    z = 0 and the folds toward the room (+z); the hem flares a little. rod: 1 ft long along x,
+    axis at the origin. finial: a ball on a collar, pointing along +x from x = 0. bracket: a round
+    wall plate and an arm from the wall (z = 0) out to the rod (z = 0.25), centred on y = 0."""
+    reset()
+    nx, nz, waves, depth = 24, 6, 3, 0.13
+    verts, faces = [], []
+    for j in range(nz + 1):
+        z = j / nz
+        flare = 1.0 + 0.3 * (1 - z) ** 2            # folds open out toward the hem
+        for i in range(nx + 1):
+            x = -0.5 + i / nx
+            fold = 0.5 - 0.5 * math.cos(2 * PI * waves * i / nx)
+            verts.append((x * (1 + 0.04 * (1 - z)), -depth * flare * fold, z))
+    for j in range(nz):
+        for i in range(nx):
+            a = j * (nx + 1) + i
+            faces.append((a, a + 1, a + nx + 2, a + nx + 1))
+    cloth = from_data('drape', verts, faces)
+    so = cloth.modifiers.new('thick', 'SOLIDIFY')
+    so.thickness, so.offset = 0.015, 0.0
+    add_model('drape', [('fab', cloth)], recentre=False)
+    reset()
+    rod = sweep('rod', [(0.035 * math.cos(2 * PI * k / 10), 0.035 * math.sin(2 * PI * k / 10)) for k in range(10)], 'x', -0.5, 0.5, sharp_deg=80)
+    add_model('rod', [('metal', rod)], recentre=False)
+    reset()
+    fin = lathe('finial', [(0.0, 0.0), (0.05, 0.0), (0.05, 0.03), (0.03, 0.05), (0.07, 0.1), (0.075, 0.14), (0.06, 0.19), (0.0, 0.22)], seg=16, sharp_deg=60)
+    fin.rotation_euler = (0, PI / 2, 0)           # its axis along +x
+    bpy.context.view_layer.update()
+    add_model('finial', [('metal', fin)], recentre=False)
+    reset()
+    plate = lathe('plate', [(0.0, 0.0), (0.065, 0.0), (0.065, 0.02), (0.05, 0.035), (0.0, 0.035)], seg=16, sharp_deg=60)
+    plate.rotation_euler = (PI / 2, 0, 0)          # flat on the wall, facing the room
+    arm = sweep('arm', [(0.018 * math.cos(2 * PI * k / 8), 0.018 * math.sin(2 * PI * k / 8)) for k in range(8)], 'y', -0.27, 0.0, sharp_deg=80)
+    cup = rbox(-0.05, 0.05, -0.29, -0.21, -0.055, -0.02, 0.012)
+    bpy.context.view_layer.update()
+    add_model('bracket', [('metal', join([plate, arm, cup], 'bracket'))], recentre=False)
+
+
+def make_nameplate():
+    """The home's name plate: a dark stone plaque with rounded edges, a raised brass border and
+    raised brass lettering. Back on the wall at walkthrough z = 0, front toward +z, bottom at y = 0."""
+    reset()
+    W, Hh, D = 3.4, 0.92, 0.1
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    for v in bm.verts:
+        v.co = Vector((v.co.x * W, v.co.y * D - D / 2, v.co.z * Hh + Hh / 2))
+    plate = from_bmesh('plate', bm, smooth=True, sharp_deg=30)
+    bv = plate.modifiers.new('round', 'BEVEL')
+    bv.width, bv.segments, bv.limit_method = 0.03, 3, 'ANGLE'
+    # border: a thin raised frame inset from the edge
+    parts = []
+    m, t, h = 0.09, 0.022, 0.012
+    for x0, x1, z0, z1 in ((-W / 2 + m, W / 2 - m, m, m + t), (-W / 2 + m, W / 2 - m, Hh - m - t, Hh - m),
+                           (-W / 2 + m, -W / 2 + m + t, m, Hh - m), (W / 2 - m - t, W / 2 - m, m, Hh - m)):
+        b2 = bmesh.new()
+        bmesh.ops.create_cube(b2, size=1.0)
+        for v in b2.verts:
+            v.co = Vector((x0 + (v.co.x + 0.5) * (x1 - x0), -D - (v.co.y + 0.5) * h, z0 + (v.co.z + 0.5) * (z1 - z0)))
+        parts.append(from_bmesh('rim', b2, smooth=False))
+    # lettering in a serif face from this PC (Blender's own font if none is found)
+    cu = bpy.data.curves.new('name', 'FONT')
+    cu.body = HOME_NAME
+    for fp in ('C:/Windows/Fonts/GARA.TTF', 'C:/Windows/Fonts/pala.ttf', 'C:/Windows/Fonts/georgia.ttf', 'C:/Windows/Fonts/times.ttf'):
+        if os.path.exists(fp):
+            cu.font = bpy.data.fonts.load(fp)
+            break
+    cu.align_x, cu.align_y = 'CENTER', 'CENTER'
+    cu.size, cu.extrude, cu.resolution_u = 0.46, 0.014, 3
+    cu.bevel_depth = 0.0   # crisp raised letters; a bevel would multiply the triangles
+    txt = link(bpy.data.objects.new('name', cu))
+    bpy.context.view_layer.update()
+    wide = txt.dimensions.x
+    if wide > W - 2 * m - 0.3:   # a long name is set smaller so it fits inside the border
+        cu.size *= (W - 2 * m - 0.3) / wide
+    txt.rotation_euler = (PI / 2, 0, 0)        # stood up, facing the road
+    txt.location = (0, -D - 0.014, Hh / 2 - 0.02)
+    bpy.context.view_layer.update()
+    me = bpy.data.meshes.new_from_object(txt.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    letters = link(bpy.data.objects.new('letters', me))
+    letters.matrix_world = txt.matrix_world.copy()
+    bpy.data.objects.remove(txt)
+    for p in letters.data.polygons:
+        p.use_smooth = False
+    bpy.context.view_layer.update()
+    add_model('nameplate', [('plate', plate), ('letters', join(parts + [letters], 'brass'))], recentre=False)
+
+
 # --------------------------------------------------------------------------------------------
 STEPS = [
     ('seat', make_seat), ('back', make_back), ('pillows', make_pillows),
@@ -459,6 +881,10 @@ STEPS = [
     ('plant_tall', lambda: plant_model('plant_tall', 4.4, 0.8, 30, 'tall')),
     ('plant_bush', lambda: plant_model('plant_bush', 3.2, 0.55, 22, 'bush')),
     ('lamps', make_lamps),
+    ('fittings', make_fittings),
+    ('nameplate', make_nameplate),
+    ('sofas', make_sofas), ('lounge chair', make_lounge_chair), ('beds', make_beds), ('dining', make_dining),
+    ('tables', make_tables), ('cases', make_cases), ('decor', make_decor), ('curtains', make_curtains),
 ]
 for nm, fn in STEPS:
     try:

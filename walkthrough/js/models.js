@@ -33,6 +33,8 @@
   }
 
   A.hasModel = (name) => !!(window.FURNITURE_MODELS && window.FURNITURE_MODELS[name]);
+  // The decoded parts of a model, [{ r: role, geo }], shared: clone a geometry before changing it.
+  A.modelParts = (name) => window.FURNITURE_MODELS[name].parts.map((part, i) => ({ r: part.r, geo: geos[name + '#' + i] || (geos[name + '#' + i] = decode(part)) }));
   A.modelSize = (name) => (A.hasModel(name) ? window.FURNITURE_MODELS[name].size : null);
 
   /* A group with one mesh per part. mats: { role: material }; a role left out is skipped.

@@ -41,7 +41,41 @@
     out.computeBoundingBox();
     return out;
   }
-  A.kit = { worldUV, merge };
+  /* Pieces that never move (furniture, trees) are built as many small meshes. Merge every
+     mesh in a group that shares a material (and casts shadows the same way) into one mesh:
+     far fewer draw calls, the same picture. Glass, sheer curtains and anything with a draw
+     order of its own are left as they are, so transparency still sorts correctly. */
+  function mergeStatic(grp) {
+    grp.updateMatrixWorld(true);
+    const inv = new T.Matrix4().copy(grp.matrixWorld).invert(), m4 = new T.Matrix4(), buckets = new Map();
+    grp.traverse((o) => {
+      if (!o.isMesh || Array.isArray(o.material) || o.material.transparent || o.renderOrder) return;
+      const key = o.material.uuid + (o.castShadow ? '|s' : '|n');
+      if (!buckets.has(key)) buckets.set(key, { mat: o.material, cast: o.castShadow, list: [] });
+      buckets.get(key).list.push(o);
+    });
+    for (const { mat, cast, list } of buckets.values()) {
+      if (list.length < 2) continue;
+      const geos = [];
+      for (const o of list) {
+        const src = o.geometry, g = new T.BufferGeometry();
+        g.setAttribute('position', src.attributes.position.clone());
+        g.setAttribute('normal', src.attributes.normal ? src.attributes.normal.clone() : src.attributes.position.clone());
+        g.setAttribute('uv', src.attributes.uv ? src.attributes.uv.clone() : new T.BufferAttribute(new Float32Array(src.attributes.position.count * 2), 2));
+        if (src.index) g.setIndex(src.index.clone());
+        else { const n = src.attributes.position.count, ix = new Uint32Array(n); for (let i = 0; i < n; i++) ix[i] = i; g.setIndex(new T.BufferAttribute(ix, 1)); }
+        g.applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
+        geos.push(g);
+      }
+      const mesh = new T.Mesh(merge(geos), mat);
+      mesh.castShadow = cast;
+      mesh.receiveShadow = true;
+      mesh.name = 'merged';
+      for (const o of list) o.parent.remove(o);
+      grp.add(mesh);
+    }
+  }
+  A.kit = { worldUV, merge, mergeStatic };
 
   /* A batcher collects axis-aligned boxes per material and turns them into one
      mesh each, which keeps the draw-call count low. */
@@ -52,6 +86,12 @@
     if (x1 - x0 < 1e-4 || y1 - y0 < 1e-4 || z1 - z0 < 1e-4) return;
     const g = new T.BoxGeometry(x1 - x0, z1 - z0, y1 - y0);
     g.translate((x0 + x1) / 2, (z0 + z1) / 2, (y0 + y1) / 2);
+    worldUV(g, A.S[mk] || 4);
+    const key = (grp || 'main') + '|' + mk;
+    (this.b[key] = this.b[key] || []).push(g);
+  };
+  // any indexed geometry already in place (a stretched Blender piece), drawn with material mk
+  Batcher.prototype.add = function (mk, g, grp) {
     worldUV(g, A.S[mk] || 4);
     const key = (grp || 'main') + '|' + mk;
     (this.b[key] = this.b[key] || []).push(g);
@@ -89,12 +129,28 @@
     // wall-local box: u along the wall, v across its thickness
     const lb = (mk, ax, u0, u1, v0, v1, z0, z1) =>
       ax === 'x' ? box(mk, u0, v0, u1, v1, z0, z1) : box(mk, v0, u0, v1, u1, z0, z1);
+    /* A piece modelled in Blender (models-data.js), stretched and turned into place:
+       x, y on plan, z = height it stands on, rot = turn about the vertical (radians),
+       sx / sy / sz = stretch along its length / height / depth. mats: { role: material }. */
+    const HAS = (n) => !!(A.hasModel && A.hasModel(n) && A.modelParts);
+    const PM = new T.Matrix4(), PQ = new T.Quaternion(), PS = new T.Vector3(), PP = new T.Vector3(), UPV = new T.Vector3(0, 1, 0);
+    function piece(name, mats, x, y, z, rot, sx, sy, sz, grp) {
+      PQ.setFromAxisAngle(UPV, rot); PS.set(sx, sy, sz); PP.set(x, z, y);
+      PM.compose(PP, PQ, PS);
+      for (const p of A.modelParts(name)) {
+        const mk = mats[p.r];
+        if (!mk) continue;
+        const g = p.geo.clone();
+        g.applyMatrix4(PM);
+        B.add(mk, g, grp || G);
+      }
+    }
 
     // --- door leaves (fl = floor level the door stands on) --------------------
     function leaf(ax, u0, u1, v0, v1, z0, z1, glazed, fl) {
       const alongU = u1 - u0 > v1 - v0;
       if (!glazed) {
-        lb('teakV', ax, u0, u1, v0, v1, z0, z1);
+        lb('joinery',ax, u0, u1, v0, v1, z0, z1);
         // handle
         if (alongU) lb('brass', ax, u1 - 0.42, u1 - 0.3, v0 - 0.12, v1 + 0.12, fl + 3.25, fl + 3.75);
         else lb('brass', ax, u0 - 0.12, u1 + 0.12, v1 - 0.42, v1 - 0.3, fl + 3.25, fl + 3.75);
@@ -102,20 +158,52 @@
       }
       const st = 0.3, bot = 0.6;
       if (alongU) {
-        lb('teakV', ax, u0, u0 + st, v0, v1, z0, z1);
-        lb('teakV', ax, u1 - st, u1, v0, v1, z0, z1);
-        lb('teakV', ax, u0 + st, u1 - st, v0, v1, z0, z0 + bot);
-        lb('teakV', ax, u0 + st, u1 - st, v0, v1, z1 - st, z1);
+        lb('joinery',ax, u0, u0 + st, v0, v1, z0, z1);
+        lb('joinery',ax, u1 - st, u1, v0, v1, z0, z1);
+        lb('joinery',ax, u0 + st, u1 - st, v0, v1, z0, z0 + bot);
+        lb('joinery',ax, u0 + st, u1 - st, v0, v1, z1 - st, z1);
         const c = (v0 + v1) / 2;
         lb('glass', ax, u0 + st, u1 - st, c - 0.015, c + 0.015, z0 + bot, z1 - st);
         lb('brass', ax, u1 - 0.22, u1 - 0.1, v0 - 0.12, v1 + 0.12, fl + 3.2, fl + 3.9);
       } else {
-        lb('teakV', ax, u0, u1, v0, v0 + st, z0, z1);
-        lb('teakV', ax, u0, u1, v1 - st, v1, z0, z1);
-        lb('teakV', ax, u0, u1, v0 + st, v1 - st, z0, z0 + bot);
-        lb('teakV', ax, u0, u1, v0 + st, v1 - st, z1 - st, z1);
+        lb('joinery',ax, u0, u1, v0, v0 + st, z0, z1);
+        lb('joinery',ax, u0, u1, v1 - st, v1, z0, z1);
+        lb('joinery',ax, u0, u1, v0 + st, v1 - st, z0, z0 + bot);
+        lb('joinery',ax, u0, u1, v0 + st, v1 - st, z1 - st, z1);
         const c = (u0 + u1) / 2;
         lb('glass', ax, c - 0.015, c + 0.015, v0 + st, v1 - st, z0 + bot, z1 - st);
+      }
+    }
+
+    // --- corner windows -------------------------------------------------------
+    /* Two windows that meet where two walls overlap at a corner (one wall along x, one along
+       y, both windows reaching into the overlap, same sill and head) become one corner window:
+       each glass runs on to the other's glass line, the end frames at the corner give way to
+       a single slim corner post, the sills meet without overlapping, and the overlap square
+       is open between sill and head even if one window stops a little short of it. */
+    function cornerWindows(list) {
+      const isWin = (o) => o.type === 'win' || o.type === 'vent';
+      for (const w1 of list) {
+        if (w1.ax !== 'x') continue;
+        for (const w2 of list) {
+          if (w2.ax !== 'y' || (w1.base || 0) !== (w2.base || 0)) continue;
+          const [ax0, ay0, ax1, ay1] = w1.r, [bx0, by0, bx1, by1] = w2.r;
+          const cx0 = Math.max(ax0, bx0), cx1 = Math.min(ax1, bx1), cy0 = Math.max(ay0, by0), cy1 = Math.min(ay1, by1);
+          if (cx1 - cx0 < 0.05 || cy1 - cy0 < 0.05) continue; // the walls do not overlap
+          for (const o1 of w1.ops || []) for (const o2 of w2.ops || []) {
+            if (!isWin(o1) || !isWin(o2) || o1.corner || o2.corner) continue;
+            if (Math.abs((o1.sill || 0) - (o2.sill || 0)) > 0.1 || Math.abs(o1.head - o2.head) > 0.1) continue;
+            const e1 = o1.a >= cx0 - 0.3 && o1.a <= cx1 && o1.b > cx1 ? 'a' : o1.b <= cx1 + 0.3 && o1.b >= cx0 && o1.a < cx0 ? 'b' : null;
+            const e2 = o2.a >= cy0 - 0.3 && o2.a <= cy1 && o2.b > cy1 ? 'a' : o2.b <= cy1 + 0.3 && o2.b >= cy0 && o2.a < cy0 ? 'b' : null;
+            if (!e1 || !e2) continue;
+            const mx = (bx0 + bx1) / 2, my = (ay0 + ay1) / 2; // where the two glass lines cross
+            // open the whole overlap square in both walls
+            if (e1 === 'a') o1.a = Math.min(o1.a, cx0); else o1.b = Math.max(o1.b, cx1);
+            if (e2 === 'a') o2.a = Math.min(o2.a, cy0); else o2.b = Math.max(o2.b, cy1);
+            o1.corner = { end: e1, at: mx, post: [mx, my], sillTo: e1 === 'a' ? bx0 - 0.12 : bx1 + 0.12 };
+            o2.corner = { end: e2, at: my, sillTo: e2 === 'a' ? ay1 + 0.1 : ay0 - 0.1 };
+          }
+        }
       }
     }
 
@@ -123,30 +211,36 @@
     function opening(ax, t0, t1, o, fl) {
       const c = (t0 + t1) / 2, a = o.a, b = o.b, sill = fl + (o.sill || 0), head = fl + o.head;
       if (o.type === 'win' || o.type === 'vent') {
-        const f = 0.13, d = 0.11;
-        lb('frame', ax, a, b, c - d, c + d, sill, sill + f);
-        lb('frame', ax, a, b, c - d, c + d, head - f, head);
-        lb('frame', ax, a, a + f, c - d, c + d, sill + f, head - f);
-        lb('frame', ax, b - f, b, c - d, c + d, sill + f, head - f);
+        const f = 0.13, d = 0.11, k = o.corner;
+        // at a corner the glass runs to the other glass line and the rails stop at the corner post
+        const ga = k && k.end === 'a' ? k.at : a, gb = k && k.end === 'b' ? k.at : b;
+        const ra = k && k.end === 'a' ? k.at + d : a, rb = k && k.end === 'b' ? k.at - d : b;
+        lb('joinery', ax, ra, rb, c - d, c + d, sill, sill + f);
+        lb('joinery', ax, ra, rb, c - d, c + d, head - f, head);
+        if (!(k && k.end === 'a')) lb('joinery', ax, a, a + f, c - d, c + d, sill + f, head - f);
+        if (!(k && k.end === 'b')) lb('joinery', ax, b - f, b, c - d, c + d, sill + f, head - f);
+        if (k && k.post) box('joinery', k.post[0] - d, k.post[1] - d, k.post[0] + d, k.post[1] + d, sill, head); // one slim corner post
+        const g0 = k && k.end === 'a' ? ga : a + f, g1 = k && k.end === 'b' ? gb : b - f;
         if (o.type === 'win') {
-          const panes = Math.max(1, Math.round((b - a) / 2.3));
+          const panes = Math.max(1, Math.round((g1 - g0) / 2.3));
           for (let i = 1; i < panes; i++) {
-            const u = a + ((b - a) * i) / panes;
-            lb('frame', ax, u - 0.05, u + 0.05, c - d, c + d, sill + f, head - f);
+            const u = g0 + ((g1 - g0) * i) / panes;
+            lb('joinery', ax, u - 0.05, u + 0.05, c - d, c + d, sill + f, head - f);
           }
-          lb('glass', ax, a + f, b - f, c - 0.015, c + 0.015, sill + f, head - f);
-          lb('quartz', ax, a - 0.12, b + 0.12, t0 - 0.1, t1 + 0.1, sill - 0.09, sill);
+          lb('glass', ax, g0, g1, c - 0.015, c + 0.015, sill + f, head - f);
+          const sa = k && k.end === 'a' ? k.sillTo : a - 0.12, sb = k && k.end === 'b' ? k.sillTo : b + 0.12;
+          lb('quartz', ax, Math.min(sa, sb), Math.max(sa, sb), t0 - 0.1, t1 + 0.1, sill - 0.09, sill);
         } else {
-          lb('frost', ax, a + f, b - f, c - 0.02, c + 0.02, sill + f, head - f);
+          lb('frost', ax, g0, g1, c - 0.02, c + 0.02, sill + f, head - f);
         }
         return;
       }
       // doors and cased openings: a teak lining (from the opening's own sill, for one high up a tall wall)
       fl = fl + (o.sill || 0);
       const j = 0.1;
-      lb('teakV', ax, a, a + j, t0 - 0.03, t1 + 0.03, fl, head);
-      lb('teakV', ax, b - j, b, t0 - 0.03, t1 + 0.03, fl, head);
-      lb('teakV', ax, a + j, b - j, t0 - 0.03, t1 + 0.03, head - j, head);
+      lb('joinery',ax, a, a + j, t0 - 0.03, t1 + 0.03, fl, head);
+      lb('joinery',ax, b - j, b, t0 - 0.03, t1 + 0.03, fl, head);
+      lb('joinery',ax, a + j, b - j, t0 - 0.03, t1 + 0.03, head - j, head);
       if (o.type === 'open') return;
       const glazed = o.type === 'gdoor', th = 0.07, z0 = fl + 0.03, z1 = head - j;
       if (o.leaves === 2) { // double door: one leaf hinged at each side
@@ -172,9 +266,50 @@
       }
     }
 
+    // --- skirting: 4" high along the foot of every wall, on each side that faces a
+    // finished floor, in that floor's own material; it stops at doors and openings.
+    const SK = 4 / 12, SKT = 0.04;
+    function floorAt(list, x, y) { // [x0, y0, x1, y1, material, level?] under a point, or null
+      for (const f of list) if (x > f[0] && x < f[2] && y > f[1] && y < f[3]) return f;
+      return null;
+    }
+    function skirting(w, floorList) {
+      const [x0, y0, x1, y1] = w.r, ax = w.ax, fl = w.base || 0, ops = w.ops || [];
+      const lo = ax === 'x' ? x0 : y0, hi = ax === 'x' ? x1 : y1, t0 = ax === 'x' ? y0 : x0, t1 = ax === 'x' ? y1 : x1;
+      const z0 = w.z ? w.z[0] : 0, z1 = w.z ? w.z[1] : H;
+      // cut the wall at its ends, its openings and every floor edge, then test each piece
+      const cuts = [lo, hi].concat(ops.flatMap((o) => [o.a, o.b]), floorList.flatMap((f) => (ax === 'x' ? [f[0], f[2]] : [f[1], f[3]])));
+      const cs = Array.from(new Set(cuts.filter((v) => v >= lo && v <= hi).map((v) => Math.round(v * 1e4) / 1e4))).sort((p, q) => p - q);
+      for (const side of [-1, 1]) {
+        const tf = side < 0 ? t0 : t1, probe = tf + side * 0.15;
+        let run = null; // [u0, u1, floor]
+        const flush = () => {
+          if (run && run[1] - run[0] > 0.05) {
+            const f = run[2], l = f.length > 5 ? f[5] : 0, len = run[1] - run[0], u = (run[0] + run[1]) / 2;
+            if (HAS('skirting')) { // the Blender profile (rounded top edge), its back on the wall face
+              if (ax === 'x') piece('skirting', { tile: f[4] }, u, tf, l, side > 0 ? 0 : Math.PI, len, 1, 1);
+              else piece('skirting', { tile: f[4] }, tf, u, l, side < 0 ? -Math.PI / 2 : Math.PI / 2, len, 1, 1);
+            } else lb(f[4], ax, run[0], run[1], side < 0 ? tf - SKT : tf, side < 0 ? tf : tf + SKT, l, l + SK);
+          }
+          run = null;
+        };
+        for (let i = 0; i < cs.length - 1; i++) {
+          const a = cs[i], b = cs[i + 1], m = (a + b) / 2;
+          const f = floorAt(floorList, ax === 'x' ? m : probe, ax === 'x' ? probe : m), l = f ? (f.length > 5 ? f[5] : 0) : 0;
+          const ok = f && z0 <= l + 0.05 && z1 >= l + SK && !ops.some((o) => o.a < m && o.b > m && fl + (o.sill || 0) < l + SK && fl + o.head > l);
+          if (!ok) { flush(); continue; }
+          if (run && run[2] === f && Math.abs(run[1] - a) < 1e-4) run[1] = b;
+          else { flush(); run = [a, b, f]; }
+        }
+        flush();
+      }
+    }
+
     // --- walls ------------------------------------------------------------
-    function buildWalls(list) {
+    function buildWalls(list, floorList) {
+      cornerWindows(list);
       for (const w of list) {
+        if (floorList) skirting(w, floorList);
         const [x0, y0, x1, y1] = w.r, fl = w.base || 0;
         let z0 = w.z ? w.z[0] : 0;
         const z1 = w.z ? w.z[1] : H, mk = w.mat || 'wall', ax = w.ax;
@@ -195,7 +330,7 @@
         for (const o of ops) opening(ax, t0, t1, o, fl);
       }
     }
-    buildWalls(P.walls);
+    buildWalls(P.walls, P.floors);
     for (const p of P.pillars) box(p.mat, p.r[0], p.r[1], p.r[2], p.r[3], p.z[0] === 0 ? -0.02 : p.z[0], p.z[1]);
 
     // --- slabs, floors, ceilings -------------------------------------------
@@ -234,7 +369,13 @@
       // --- ground floor, from its own plan -----------------------------------
       G = 'gmain';
       const PL = GF + GR.PORCH;
-      buildWalls(GR.walls);
+      buildWalls(GR.walls, GR.floors.concat([[19, 47, 29.625, 52.75, 'stonefloor', GF]]));
+      // the home's name plate, modelled in Blender, on the road face of the gate pier at eye level
+      const pier = GR.walls.find((w) => w.id === 'g-front-pier');
+      if (pier && HAS('nameplate')) {
+        const base = Math.min(pier.z[1] - 1.4, GF + GR.PORCH + 4.3);
+        piece('nameplate', { plate: 'plaque', letters: 'gilt' }, (pier.r[0] + pier.r[2]) / 2, pier.r[3], base, 0, 1, 1, 1);
+      }
       for (const p of GR.pillars) box(p.mat, p.r[0], p.r[1], p.r[2], p.r[3], p.z[0] === GF ? GF - 0.02 : p.z[0], p.z[1]);
       for (const r of GR.indoor) { box('stone', r[0], r[1], r[2], r[3], PL - 0.6, GF - 0.035); box('marble', r[0], r[1], r[2], r[3], GF - 0.035, GF - 0.02); }
       for (const r of GR.plinth) box('stone', r[0], r[1], r[2], r[3], PL - 0.6, GF - 0.02);
@@ -261,7 +402,13 @@
       for (let k = 1; k <= 6; k++) box('stair', X1 - k * TF - 0.02, 50.01, X1 - (k - 1) * TF, 52.75, (9 + k) * RT - TH, (9 + k) * RT);
       box('stone', 19.375, 47, X0, 52.75, TOPL - SLAB, TOPL - 0.02);           // landing on the roof
       box('stonefloor', 19.375, 47, X0, 52.75, TOPL - 0.02, TOPL);
-      box('wall', X0, 49.76, X1, 50.01, GF, TOPL);                              // wall between the flights, full height
+      // the inner side of the flights, round the gap between them: a railing, not a wall
+      const yA = 49.76 - 0.07, yB = 50.01 + 0.07;
+      for (const [base, R] of [[GF, RF], [0, RT]]) {
+        glassRun([X0, yA, base + R], [X1, yA, base + 7 * R], 0, 'both');         // flight heading south
+        glassRun([X1, yA, base + 7 * R], [X1, yB, base + 9 * R], 0, 'both');     // round the turn
+        glassRun([X1, yB, base + 9 * R], [X0, yB, base + 15 * R], 0, 'both');    // flight heading back
+      }
       G = 'main';
       // railings on the open sides of the upper run and its landings
       const R0 = 0.07;
@@ -273,8 +420,10 @@
         glassRun([X0, 52.66, 0], [19.45, 52.66, 0], 0, 'both');                  // first floor landing, road side
       }
       if (!tall('g-stair-north')) glassRun([19.45, 52.66, 0], [19.45, 50.6, 0], 0, 'both'); // landing, north side
-      glassRun([X0, 52.66, TOPL], [19.45, 52.66, TOPL], 0, 'both');            // roof landing, road side
-      glassRun([19.45, 52.66, TOPL], [19.45, 47.05, TOPL], 0, 'both');         //   north side
+      // roof landing: railings only where the stair's walls stop at the roof (they can rise above it)
+      const above = (id) => GR.walls.some((w) => w.id === id && w.z[1] > TOPL + 3);
+      if (!above('g-stair-front')) glassRun([X0, 52.66, TOPL], [19.45, 52.66, TOPL], 0, 'both');   // roof landing, road side
+      if (!above('g-stair-north')) glassRun([19.45, 52.66, TOPL], [19.45, 47.05, TOPL], 0, 'both'); //   north side
       glassRun([X0 + R0, 47.05, TOPL], [X0 + R0, 49.76, TOPL], 0, 'both');     //   over the flight below
       // roof finish: terrace tiles on top of the roof slab
       for (const c of P.ceilings.slice(0, 4)) box('stonefloor', c[0], c[1], c[2], c[3], TOPL, TOPL + 0.02, 'ceil');
@@ -346,41 +495,97 @@
     glassRun([26.125 + e, 23.96, -8 * RISE], [26.125 + e, 18.125 + e, -16 * RISE], 0, 'both'); // flight 2
     glassRun([26.125 + e, 18.125 - e, -16 * RISE], [23.62, 18.125 - e, GF], 0, 'both');    // flight 3
 
-    // --- outdoor jaali railings ---------------------------------------------
-    function jaaliRun(xa, ya, xb, yb, h) {
-      h = h || 3.5;
-      P.solids.push([Math.min(xa, xb) - 0.07, Math.min(ya, yb) - 0.07, Math.max(xa, xb) + 0.07, Math.max(ya, yb) + 0.07, 0, h]);
+    // --- outdoor railings: jaali, glass or metal bars ---------------------------
+    /* A straight run from (xa, ya) to (xb, yb), standing on z0 and h high. onWall = it
+       sits on top of a parapet, so it starts right at the wall top. */
+    /* Posts and the handrail of a level run, from the Blender pieces: chamfered posts about
+       every `gap` feet (the end ones rise through the rail and carry a cap), rounded rail on top. */
+    function postsAndRail(alongX, u0, u1, c, z0, h, grp, gap) {
+      const len = u1 - u0, rot = alongX ? 0 : -Math.PI / 2, at = (u) => (alongX ? [u, c] : [c, u]);
+      const n = Math.max(1, Math.round(len / gap));
+      for (let i = 0; i <= n; i++) {
+        const u = Math.min(u1 - 0.08, Math.max(u0 + 0.08, u0 + (len * i) / n)), [x, y] = at(u), end = i === 0 || i === n;
+        piece('rail_post', { metal: 'metal' }, x, y, z0, 0, 1, end ? h + 0.03 : h - 0.1, 1, grp);
+        if (end) piece('rail_cap', { metal: 'metal' }, x, y, z0 + h + 0.03, 0, 1, 1, 1, grp);
+      }
+      const [mx, my] = at((u0 + u1) / 2);
+      piece('rail_top', { metal: 'metal' }, mx, my, z0 + h - 0.1, rot, len, 1, 1, grp);
+    }
+    const MODELLED = () => HAS('rail_post') && HAS('rail_top') && HAS('rail_bar') && HAS('rail_cap');
+
+    function jaaliRun(xa, ya, xb, yb, h, z0, grp, onWall) {
+      h = h || 3.5; z0 = z0 || 0; grp = grp || 'main';
+      P.solids.push([Math.min(xa, xb) - 0.07, Math.min(ya, yb) - 0.07, Math.max(xa, xb) + 0.07, Math.max(ya, yb) + 0.07, z0, z0 + h]);
       const alongX = Math.abs(xb - xa) > Math.abs(yb - ya);
       const len = alongX ? Math.abs(xb - xa) : Math.abs(yb - ya);
-      const t = 0.07;
-      if (alongX) {
+      const t = 0.07, foot = onWall ? 0 : 0.18; // bottom rail: on the parapet, or a little off the floor
+      if (MODELLED()) {
+        const u0 = alongX ? Math.min(xa, xb) : Math.min(ya, yb), u1 = u0 + len, c = alongX ? ya : xa;
+        postsAndRail(alongX, u0, u1, c, z0, h, grp, 4.5);
+        if (alongX) box('metal', u0, c - t, u1, c + t, z0 + foot, z0 + foot + 0.12, grp);
+        else box('metal', c - t, u0, c + t, u1, z0 + foot, z0 + foot + 0.12, grp);
+      } else if (alongX) {
         const x0 = Math.min(xa, xb), x1 = Math.max(xa, xb);
-        box('metal', x0, ya - t, x1, ya + t, h - 0.14, h);
-        box('metal', x0, ya - t, x1, ya + t, 0.18, 0.3);
+        box('metal', x0, ya - t, x1, ya + t, z0 + h - 0.14, z0 + h, grp);
+        box('metal', x0, ya - t, x1, ya + t, z0 + foot, z0 + foot + 0.12, grp);
         const n = Math.max(1, Math.round(len / 4.5));
-        for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n; box('metal', x - 0.08, ya - 0.08, x + 0.08, ya + 0.08, 0, h); }
+        for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n; box('metal', x - 0.08, ya - 0.08, x + 0.08, ya + 0.08, z0, z0 + h, grp); }
       } else {
         const y0 = Math.min(ya, yb), y1 = Math.max(ya, yb);
-        box('metal', xa - t, y0, xa + t, y1, h - 0.14, h);
-        box('metal', xa - t, y0, xa + t, y1, 0.18, 0.3);
+        box('metal', xa - t, y0, xa + t, y1, z0 + h - 0.14, z0 + h, grp);
+        box('metal', xa - t, y0, xa + t, y1, z0 + foot, z0 + foot + 0.12, grp);
         const n = Math.max(1, Math.round(len / 4.5));
-        for (let i = 0; i <= n; i++) { const y = y0 + ((y1 - y0) * i) / n; box('metal', xa - 0.08, y - 0.08, xa + 0.08, y + 0.08, 0, h); }
+        for (let i = 0; i <= n; i++) { const y = y0 + ((y1 - y0) * i) / n; box('metal', xa - 0.08, y - 0.08, xa + 0.08, y + 0.08, z0, z0 + h, grp); }
       }
-      const ph = h - 0.44;
+      const pb = foot + 0.12, ph = h - 0.14 - pb;
+      if (ph < 0.2) return;
       const g = new T.PlaneGeometry(len, ph);
       const uv = g.attributes.uv;
-      for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * len) / 2.9, uv.getY(i));
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * len) / 2.9, (uv.getY(i) * ph) / 3.06);
       const m = new T.Mesh(g, M.jaali);
       if (!alongX) m.rotation.y = Math.PI / 2;
-      m.position.set((xa + xb) / 2, 0.3 + ph / 2, (ya + yb) / 2);
+      m.position.set((xa + xb) / 2, z0 + pb + ph / 2, (ya + yb) / 2);
       m.castShadow = true;
       m.receiveShadow = true;
-      m.userData.grp = 'main';
+      m.userData.grp = grp;
       extra.push(m);
     }
-    for (const s of P.rails.jaali) { // open edges of the terrace and balconies
+    // metal bars: flat top rail, bottom rail, square bars at 4½" centres, a post every 4 ft or so
+    function barsRun(xa, ya, xb, yb, h, z0, grp, onWall) {
+      h = h || 3.5; z0 = z0 || 0; grp = grp || 'main';
+      P.solids.push([Math.min(xa, xb) - 0.07, Math.min(ya, yb) - 0.07, Math.max(xa, xb) + 0.07, Math.max(ya, yb) + 0.07, z0, z0 + h]);
+      const alongX = Math.abs(xb - xa) > Math.abs(yb - ya), c = alongX ? ya : xa;
+      const u0 = alongX ? Math.min(xa, xb) : Math.min(ya, yb), u1 = alongX ? Math.max(xa, xb) : Math.max(ya, yb), len = u1 - u0;
+      const bar = (a, b, half, za, zb) => (alongX ? box('metal', a, c - half, b, c + half, za, zb, grp) : box('metal', c - half, a, c + half, b, za, zb, grp));
+      const foot = onWall ? 0 : 0.15;
+      bar(u0, u1, 0.05, z0 + foot, z0 + foot + 0.08);          // bottom rail
+      const n = Math.max(1, Math.round(len / 0.375));
+      if (MODELLED()) { // Blender pieces: round bars, chamfered posts with caps, rounded handrail
+        postsAndRail(alongX, u0, u1, c, z0, h, grp, 4);
+        const bz = z0 + foot + 0.08, bh = h - 0.1 - foot - 0.08;
+        for (let i = 1; i < n; i++) { const u = u0 + (len * i) / n; piece('rail_bar', { metal: 'metal' }, alongX ? u : c, alongX ? c : u, bz, 0, 1, bh, 1, grp); }
+        return;
+      }
+      bar(u0, u1, 0.11, z0 + h - 0.1, z0 + h);                 // top rail
+      for (let i = 1; i < n; i++) { const u = u0 + (len * i) / n; bar(u - 0.026, u + 0.026, 0.026, z0 + foot + 0.08, z0 + h - 0.1); }
+      const np = Math.max(1, Math.round(len / 4));
+      for (let i = 0; i <= np; i++) { const u = Math.min(u1 - 0.045, Math.max(u0 + 0.045, u0 + (len * i) / np)); bar(u - 0.045, u + 0.045, 0.045, z0, z0 + h - 0.1); }
+    }
+    function railRun(kind, xa, ya, xb, yb, z0, z1, grp, onWall) {
+      const h = z1 - z0;
+      if (h < 0.3) return;
+      if (kind === 'glass') glassRun([xa, ya, z0], [xb, yb, z0], h, grp);
+      else if (kind === 'bars') barsRun(xa, ya, xb, yb, h, z0, grp, onWall);
+      else jaaliRun(xa, ya, xb, yb, h, z0, grp, onWall);
+    }
+    for (const s of P.rails.edge) { // open edges of the terraces and balconies
       if (s.b - s.a < 0.3) continue;
-      if (s.dir === 'y') jaaliRun(s.c, s.a, s.c, s.b); else jaaliRun(s.a, s.c, s.b, s.c);
+      if (s.dir === 'y') railRun(s.kind, s.c, s.a, s.c, s.b, 0, s.top, 'main');
+      else railRun(s.kind, s.a, s.c, s.b, s.c, 0, s.top, 'main');
+    }
+    for (const r of P.rails.walls) { // on top of parapets, along the middle of the wall
+      if (r.ax === 'x') { const y = (r.r[1] + r.r[3]) / 2; railRun(r.kind, r.r[0], y, r.r[2], y, r.z0, r.z1, r.grp, true); }
+      else { const x = (r.r[0] + r.r[2]) / 2; railRun(r.kind, x, r.r[1], x, r.r[3], r.z0, r.z1, r.grp, true); }
     }
 
     // --- surroundings ---------------------------------------------------------
@@ -419,16 +624,17 @@
     const nb = (mk, x0, y0, x1, y1, h) => cb(mk, x0, y0, x1, y1, E - 0.3, E + h);
     nb('nb1', 30.4, 2, 58, 46, 11);
     nb('nb2', -74, 2, -44, 40, 22);
-    nb('nb3', -34, 84, -6, 122, 23);
-    nb('nb1', 0, 86, 28, 124, 33);
-    nb('nb2', 34, 84, 62, 120, 22);
-    nb('nb3', 68, 86, 98, 122, 30);
-    nb('nb1', -70, 84, -40, 120, 26);
+    // across the road: kept low (one storey) so they never stand between the dollhouse view and the home
+    nb('nb3', -34, 84, -6, 122, 13);
+    nb('nb1', 0, 86, 28, 124, 14);
+    nb('nb2', 34, 84, 62, 120, 12);
+    nb('nb3', 68, 86, 98, 122, 14);
+    nb('nb1', -70, 84, -40, 120, 13);
     nb('nb2', -4, -86, 30, -50, 23);
     nb('nb3', 36, -88, 66, -52, 32);
     nb('nb1', -44, -84, -10, -50, 20);
     // windows on the facing sides of the houses across the road
-    for (const [x0, x1, h, fy] of [[-34, -6, 23, 84], [0, 28, 33, 86], [34, 62, 22, 84], [68, 98, 30, 86], [-70, -40, 26, 84]])
+    for (const [x0, x1, h, fy] of [[-34, -6, 13, 84], [0, 28, 14, 86], [34, 62, 12, 84], [68, 98, 14, 86], [-70, -40, 13, 84]])
       for (let fl = 0; fl * 10.5 + 9 < h; fl++)
         for (let x = x0 + 3; x + 4 < x1; x += 7.5) {
           cb('nbwin', x, fy - 0.06, x + 4, fy + 0.4, E + fl * 10.5 + 3.5, E + fl * 10.5 + 8);
@@ -456,6 +662,7 @@
       }
     }
 
+    mergeStatic(groups.ctx); // the trees: a trunk and four crowns each
     scene.add(groups.main, groups.gmain, groups.both, groups.ceil, groups.ctx);
     A.groups = groups;
     return groups;

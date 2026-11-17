@@ -106,9 +106,11 @@
       const f = camera.position.y < A.plan.GF / 2 ? 'ground' : 'first';
       if (f === nearFloor) return;
       nearFloor = f;
+      // walls and floors first (near floor, then far), furniture after them, so furniture hidden
+      // behind a wall is skipped before it is shaded
       const set = (grp, v) => { if (grp) grp.traverse((o) => { if (o.isMesh && o.renderOrder < 5) o.renderOrder = v; }); };
-      set(A.groups.main, f === 'first' ? 0 : 1); set(A.groups.furn, f === 'first' ? 0 : 1);
-      set(A.groups.gmain, f === 'ground' ? 0 : 1); set(A.groups.gfurn, f === 'ground' ? 0 : 1);
+      set(A.groups.main, f === 'first' ? 0 : 1); set(A.groups.furn, f === 'first' ? 2 : 3);
+      set(A.groups.gmain, f === 'ground' ? 0 : 1); set(A.groups.gfurn, f === 'ground' ? 2 : 3);
     }
 
     let render = () => { orderFloors(); renderer.render(scene, camera); };

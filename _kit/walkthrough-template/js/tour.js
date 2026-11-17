@@ -617,8 +617,17 @@
 
     // --- the end of the tour: rise out through the roof to the dollhouse view -------
     const rise = { t: 0, p0: new T.Vector3(), l0: new T.Vector3(), p1: new T.Vector3(), fov0: 64 };
+    // In the dollhouse view the house sits in the clear space above the control bar: the
+    // camera stands further back, and the picture is shifted up by half the bar's height.
+    let viewShift = false;
+    function frameAboveBar(k) {
+      const w = canvas.clientWidth, h = canvas.clientHeight, bar = $('bar') ? $('bar').offsetHeight + 16 : 0;
+      const d = Math.round((bar / 2) * k);
+      if (d > 0 && h > bar + 120) { camera.setViewOffset(w, h, 0, d, w, h); viewShift = true; }
+      else if (viewShift) { camera.clearViewOffset(); viewShift = false; }
+    }
     const dollPos = (out) => {
-      const Rr = 92;
+      const Rr = 116;
       return out.set(ovC.x + Rr * Math.cos(st.el) * Math.sin(st.az), ovC.y + Rr * Math.sin(st.el), ovC.z + Rr * Math.cos(st.el) * Math.cos(st.az));
     };
     function startRise() {
@@ -644,6 +653,7 @@
       camera.lookAt(tmpL);
       camera.fov = rise.fov0 + (40 - rise.fov0) * e;
       camera.updateProjectionMatrix();
+      frameAboveBar(e);
       if (u >= 1) { st.mode = 'overview'; st.ov = 0; st.spin = true; showOverview(true); setDollLabel(); }
     }
     A.riseNow = () => { st.t = total; startRise(); }; // for checking
@@ -651,6 +661,7 @@
     // --- per-frame update ---------------------------------------------------------
     let uiTick = 0;
     function tick(dt) {
+      if (st.mode !== 'overview' && st.mode !== 'rise') frameAboveBar(0); // walking views fill the screen
       if (st.mode === 'tour' && st.playing) {
         st.t += dt;
         if (st.t >= total) {
@@ -673,6 +684,7 @@
         if (st.spin && st.ov >= 4 && !st.ended) { st.ended = true; setPlaying(false); elEnd.style.display = 'block'; }
         dollPos(camera.position);
         camera.lookAt(ovC);
+        frameAboveBar(1);
       } else if (st.mode === 'free') {
         freeStep(dt);
         applyCam();

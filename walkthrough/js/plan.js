@@ -57,11 +57,11 @@
   const zr = (z) => { const o = z ? [zval(z[0]), zval(z[1])] : [0, H]; if (G && o[0] < -SLAB) o[0] = -SLAB; return o; };
 
   const walls = D.walls.filter((w) => !(G && w.hidden)).map((w) => ({
-    id: w.id, ax: w.ax, r: w.r.slice(), z: zr(w.z), base: 0, mat: w.mat || 'wall',
+    id: w.id, ax: w.ax, r: w.r.slice(), z: zr(w.z), base: 0, mat: w.mat || 'wall', rail: w.rail, railTop: w.railTop,
     ops: (w.ops || []).map((o) => Object.assign({}, o, { head: Math.min(o.head, zr(w.z)[1]) })),
   })).filter((w) => w.z[1] - w.z[0] > 0.01);
   const pillars = D.pillars.map((p) => ({ id: p.id, r: p.r.slice(), z: zr(p.z), mat: p.mat || 'wall' }));
-  const areaList = (D.areas || A.DEFAULT_AREAS).map((a) => ({ id: a.id, name: a.name || a.id, kind: a.kind, r: a.r.slice() }));
+  const areaList = (D.areas || A.DEFAULT_AREAS).map((a) => ({ id: a.id, name: a.name || a.id, kind: a.kind, r: a.r.slice(), rail: a.rail, railTop: a.railTop }));
   const areaById = {};
   for (const a of areaList) areaById[a.id] = a;
   // Wardrobes: footprint, the side the doors are on, and height (ceiling if not given).
@@ -84,6 +84,34 @@
     return out;
   }
   const uniq = (list) => Array.from(new Set(list.map((v) => Math.round(v * 1000) / 1000))).sort((a, b) => a - b);
+
+  /* Railings, set in the editor. Kinds: 'jaali' (pattern panel, the default), 'glass',
+     'bars' (metal bars) or 'none'.
+     - A terrace or balcony puts its kind on its open sides (area.rail), up to area.railTop.
+     - A wall can carry one on top (wall.rail), up to wall.railTop. Left on automatic, a low
+       wall (a parapet under 3 ft) along a terrace or balcony takes that area's railing.
+     Heights are above the floor; 3'-6" when not given. */
+  A.RAIL_KINDS = { jaali: 'Jaali (pattern panel)', glass: 'Glass', bars: 'Metal bars', none: 'None' };
+  A.RAIL_TOP = 3.5;
+  // The railing on top of a wall: { kind, top } or null. z0 / z1 / railTop are feet above that floor.
+  A.wallRail = function (r, z0, z1, rail, railTop, areas) {
+    if (rail === 'none' || z0 > 0.5) return null;
+    let kind = rail, top = +railTop || 0;
+    if (!A.RAIL_KINDS[kind]) { // automatic
+      if (z1 >= 3 || z1 < 0.75) return null;
+      let best = null, most = 0;
+      for (const a of areas || []) { // the terrace or balcony this parapet edges (the one it overlaps most)
+        if (a.kind !== 'terrace' && a.kind !== 'balcony') continue;
+        const ox = Math.min(r[2], a.r[2] + 0.6) - Math.max(r[0], a.r[0] - 0.6), oy = Math.min(r[3], a.r[3] + 0.6) - Math.max(r[1], a.r[1] - 0.6);
+        if (ox > 0 && oy > 0 && ox * oy > most) { most = ox * oy; best = a; }
+      }
+      if (!best || best.rail === 'none') return null;
+      kind = A.RAIL_KINDS[best.rail] ? best.rail : 'jaali';
+      top = top || +best.railTop || 0;
+    }
+    top = top || A.RAIL_TOP;
+    return top > z1 + 0.25 ? { kind, top } : null;
+  };
   /* Edges of a set of floor rectangles that need a railing. needsRail(x, y, nx, ny)
      is asked about each edge piece, n being the direction away from the floor.
      Returns [{ dir, c, a, b, n }]: dir "y" runs along Y at X = c, dir "x" along X at Y = c. */
@@ -129,16 +157,17 @@
   const FRONT_LANDING = G ? [19, 47, 22.13, 52.75] : null;   // runs through the opening in the stair's north wall to the balcony
   if (FRONT_LANDING) slabs.push(FRONT_LANDING);
 
-  // Finish floors of the rooms: [x0, y0, x1, y1, material]
+  // Finish floors of the rooms: [x0, y0, x1, y1, material]. The whole house has the living
+  // room's tile ('marble', which each style sets), bedrooms and toilets included.
   const roomFloors = [
     [-0.25, 0.375, 19.25, 14.25, 'marble'],       // living and dining
     [-0.25, 14.25, 13.72, 14.625, 'marble'],      // where the wall to the lounge was taken out
     [19.25, 0.75, 29.625, 7.75, 'marble'],        // kitchen
     [27.125, 7.75, 29.625, 14.25, 'marble'],      // kitchen utility leg
-    [19.2085, 8.125, 26.75, 14.25, 'bathfloor'],  // common washroom
-    [9.25, 28.25, 22.25, 46.25, 'woodfloor'],     // master bedroom
-    [22.625, 38.25, 29.625, 46.25, 'woodfloor'],  // dress
-    [22.625, 28.25, 29.625, 37.875, 'bathfloor'], // master toilet
+    [19.2085, 8.125, 26.75, 14.25, 'marble'],     // common washroom
+    [9.25, 28.25, 22.25, 46.25, 'marble'],        // master bedroom
+    [22.625, 38.25, 29.625, 46.25, 'marble'],     // dress
+    [22.625, 28.25, 29.625, 37.875, 'marble'],    // master toilet
   ];
   const floors = roomFloors
     .concat(midFloor.map((r) => [r[0], r[1], r[2], r[3], 'marble']))
@@ -227,15 +256,36 @@
     if (nx === 1 && Math.abs(x - 20.29) < 0.01 && y > 24.375 && y < 27.875) return false;
     return true;
   });
-  // Jaali railing on every open edge of a terrace or balcony: not where it meets
-  // the building, another open area, or a wall / parapet / pillar.
-  const guards = walls.concat(pillars).filter((w) => w.z[0] < 0.5 && w.z[1] > 3).map((w) => w.r);
-  const jaali = boundary(outdoor.map((a) => a.r), (x, y, nx, ny) => {
-    const ox = x + nx * 0.1, oy = y + ny * 0.1, ix = x - nx * 0.1, iy = y - ny * 0.1;
-    if (slabs.some((s) => inRect(ox, oy, s))) return false;
-    if (guards.some((g) => inRect(ox, oy, g) || inRect(ix, iy, g))) return false;
-    return true;
-  }, guards.flatMap((g) => [g[0], g[2]]), guards.flatMap((g) => [g[1], g[3]]));
+  // Railing on every open edge of a terrace or balcony, of the kind chosen for that area:
+  // not where it meets the building, another open area, or a wall / parapet / pillar (a
+  // parapet lower than the railing carries its own railing on top, below).
+  const guards = walls.concat(pillars).filter((w) => w.z[0] < 0.5 && w.z[1] >= 1).map((w) => w.r);
+  const edge = [];
+  for (const kind of ['jaali', 'glass', 'bars']) {
+    const segs = boundary(outdoor.map((a) => a.r), (x, y, nx, ny) => {
+      const ox = x + nx * 0.1, oy = y + ny * 0.1, ix = x - nx * 0.1, iy = y - ny * 0.1;
+      if (slabs.some((s) => inRect(ox, oy, s))) return false;
+      if (guards.some((g) => inRect(ox, oy, g) || inRect(ix, iy, g))) return false;
+      const own = outdoor.find((a) => inRect(ix, iy, a.r));
+      return !!own && (A.RAIL_KINDS[own.rail] ? own.rail : 'jaali') === kind;
+    }, guards.flatMap((g) => [g[0], g[2]]), guards.flatMap((g) => [g[1], g[3]]));
+    for (const s of segs) {
+      const mx = s.dir === 'y' ? s.c - s.n * 0.1 : (s.a + s.b) / 2, my = s.dir === 'y' ? (s.a + s.b) / 2 : s.c - s.n * 0.1;
+      const own = outdoor.find((a) => inRect(mx, my, a.r));
+      edge.push(Object.assign(s, { kind, top: (own && +own.railTop) || A.RAIL_TOP }));
+    }
+  }
+  const jaali = edge.filter((s) => s.kind === 'jaali');
+  /* Railings on top of walls: [{ ax, r, z0, z1, kind, grp }], z in model heights.
+     base = the floor level the wall stands on. */
+  const wallRails = [];
+  function railsOnWalls(list, base, areaSet, grp) {
+    for (const w of list) {
+      const rr = A.wallRail(w.r, w.z[0] - base, w.z[1] - base, w.rail, w.railTop, areaSet);
+      if (rr) wallRails.push({ id: w.id, ax: w.ax, r: w.r, z0: w.z[1], z1: base + rr.top, kind: rr.kind, grp });
+    }
+  }
+  railsOnWalls(walls, 0, areaList, 'main');
 
   const v0 = voids[0];
   const voidCenter = v0 ? [(v0.r[0] + Math.min(v0.r[2], 24.5)) / 2, (v0.r[1] + v0.r[3]) / 2] : [17, 19.6];
@@ -247,7 +297,7 @@
     const gzr = (z) => (z ? [GF + gv(z[0]), GF + gv(z[1])] : [GF, GF + HG]);
     const gwalls = G.walls.map((w) => {
       const z = gzr(w.z);
-      return { id: w.id, ax: w.ax, r: w.r.slice(), z, base: GF, grp: 'gmain', mat: w.mat || 'wall',
+      return { id: w.id, ax: w.ax, r: w.r.slice(), z, base: GF, grp: 'gmain', mat: w.mat || 'wall', rail: w.rail, railTop: w.railTop,
         ops: (w.ops || []).map((o) => Object.assign({}, o, { head: Math.min(o.head, z[1] - GF) })) };
     });
     const gpillars = G.pillars.map((p) => ({ id: p.id, r: p.r.slice(), z: gzr(p.z), mat: p.mat || 'wall', grp: 'gmain' }));
@@ -257,26 +307,28 @@
     // Solid base under the building, up to the floor finish.
     const indoor = [[-1, 0, 30.375, 14.625], [-0.375, 14.625, 30.375, 28.625], [7.75, 28.625, 30.375, 39], [15.875, 39, 30.375, 47]];
     const plinth = [[19, 47, 30.375, 53.5]].concat(gareas.filter((a) => a.kind !== 'porch').map((a) => a.r));
-    // Finish floors of the rooms: [x0, y0, x1, y1, material]
+    // Finish floors of the rooms: [x0, y0, x1, y1, material]. One tile through the house, as in the living room.
     const gRoomFloors = [
       [0.375, 14.625, 29.625, 27.875, 'marble'],      // living / dining hall
-      [-0.25, 4.75, 12.885, 14.25, 'woodfloor'],      // children's bedroom
+      [-0.25, 4.75, 12.885, 14.25, 'marble'],         // children's bedroom
       [-0.25, 0.375, 4.75, 4.375, 'marble'],          // pooja
       [13.26, 0.75, 19.25, 4.375, 'marble'],          // store
       [15.26, 4.375, 19.25, 6.38, 'marble'],
-      [13.26, 9.5, 19.25, 14.25, 'bathfloor'],        // common toilet
-      [15.26, 6.75, 19.25, 9.5, 'bathfloor'],         // w.c.
-      [19.625, 0.75, 29.625, 14.25, 'woodfloor'],     // guest bedroom
+      [13.26, 9.5, 19.25, 14.25, 'marble'],           // common toilet
+      [15.26, 6.75, 19.25, 9.5, 'marble'],            // w.c.
+      [19.625, 0.75, 29.625, 14.25, 'marble'],        // guest bedroom
       [8.5, 28.25, 15.875, 38.25, 'marble'],          // kitchen
       [16.25, 28.25, 19.75, 33.25, 'marble'],         // passage
-      [20.125, 28.25, 29.625, 33.25, 'bathfloor'],    // toilet (the duct was taken out)
-      [16.25, 33.25, 19.75, 33.625, 'woodfloor'],     // passage opens into the master bedroom
-      [16.25, 33.625, 29.25, 46.25, 'woodfloor'],     // master bedroom
+      [20.125, 28.25, 29.625, 33.25, 'marble'],       // toilet (the duct was taken out)
+      [16.25, 33.25, 19.75, 33.625, 'marble'],        // passage opens into the master bedroom
+      [16.25, 33.625, 29.25, 46.25, 'marble'],        // master bedroom
     ];
-    // Steps between the porch and the raised floor: [x0, y0, x1, y1, top above the ground floor]
+    // Steps between the porch and the raised floor: [x0, y0, x1, y1, top above the ground floor].
+    // The walkway's two steps go down from its front end, wherever the editor puts it.
+    const wk = gareas.find((a) => a.id === 'walkway'), wy = wk ? wk.r[3] : 49.14, wx0 = wk ? wk.r[0] : 12, wx1 = wk ? wk.r[2] : 15.875;
     const steps = [
       [0.375, 33.13, 7.75, 33.965, -0.5], [0.375, 33.965, 7.75, 34.8, -1.0],
-      [12, 49.14, 15.875, 49.97, -0.5], [12, 49.97, 15.875, 50.8, -1.0],
+      [wx0, wy, wx1, wy + 0.83, -0.5], [wx0, wy + 0.83, wx1, wy + 1.66, -1.0],
     ];
     const sq = (w, d) => Math.round(w * d) + ' sq ft';
     const grooms = [
@@ -305,13 +357,14 @@
       [7.75, 27.875, 29.625, 39, GF],                 // kitchen, passage, toilet
       [15.875, 39, 29.625, 46.25, GF],                // master bedroom
       [0.375, 33.13, 7.75, 34.8, ramp(33.13, 34.8)],  // lobby steps
-      [12, 49.14, 15.875, 50.8, ramp(49.14, 50.8)]    // walkway steps
+      [wx0, wy, wx1, wy + 1.66, ramp(wy, wy + 1.66)]  // walkway steps
     );
     for (const a of gareas) areas.push([a.r[0], a.r[1], a.r[2], a.r[3], a.lvl]);
     const ROAD = GF + PORCH - 0.25;                                // road surface, a little below the porch
     areas.push([-40, 54.5, 70, 78, ROAD]);
     for (const [tx, ty, ts] of [[-12, 58, 0.8], [40, 58.5, 0.9]]) solids.push([tx - 0.75 * ts, ty - 0.75 * ts, tx + 0.75 * ts, ty + 0.75 * ts, ROAD - 1, ROAD + 9]);
     addSolids(gwalls, gpillars);
+    railsOnWalls(gwalls, GF, gareas, 'gmain'); // ground floor: only railings chosen in the editor
     /* Front stair: two runs, each a flight heading south, three winders and a
        flight heading back north. The first run reaches the landing beside the
        front balcony, the second the roof. */
@@ -327,8 +380,9 @@
     const roof = ceilings.slice(0, 4);
     for (const c of roof) areas.push([c[0], c[1], c[2], c[3], TOP]);
     solids.push([FX0, 49.76, FX1, 50.01, GF, TOP]);              // the wall between the flights
-    // a 3 ft parapet round the roof, open only where the stair landing joins it
-    const parapet = boundary(roof, (x, y, nx, ny) => !(ny === 1 && Math.abs(y - 47) < 0.01 && x > 19.375 && x < FX0));
+    // a 3 ft parapet round the roof, open only where the stair landing joins it (the road-side
+    // edge is cut at the landing's sides, so the wall stays on either side of the opening)
+    const parapet = boundary(roof, (x, y, nx, ny) => !(ny === 1 && Math.abs(y - 47) < 0.01 && x > 19.375 && x < FX0), [19.375, FX0]);
     for (const s of parapet) {
       const t = 0.375, a = s.c - (s.n > 0 ? t : 0), b = s.c + (s.n < 0 ? t : 0);
       solids.push(s.dir === 'y' ? [a, s.a, b, s.b, TOP, TOP + 3] : [s.a, a, s.b, b, TOP, TOP + 3]);
@@ -344,6 +398,6 @@
 
   A.plan = {
     H, SLAB, GF, HG, PORCH, DOOR, RISE, TREAD, walls, pillars, slabs, floors, roomFloors, ceilings, rooms, areas, solids,
-    areaList, areaById, voids, midFloor, wardrobes, ZONE, STAIRWELL, rails: { glass, jaali }, voidCenter, ground,
+    areaList, areaById, voids, midFloor, wardrobes, ZONE, STAIRWELL, rails: { glass, jaali, edge, walls: wallRails }, voidCenter, ground,
   };
 })();
