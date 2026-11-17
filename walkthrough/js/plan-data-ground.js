@@ -47,11 +47,11 @@ window.PLAN_DATA_GROUND = {
     {"id": "g-master-wardrobe-side", "ax": "y", "r": [22.25, 44.25, 22.625, 46.25], "ops": []},
     {"id": "g-master-south-liner", "ax": "y", "r": [29.25, 33.625, 29.625, 46.25], "ops": []},
     {"id": "g-south", "ax": "y", "r": [29.625, 0, 30.375, 47], "ops": []},
-    {"id": "g-stair-south", "ax": "y", "r": [29.625, 47, 30.375, 53.5], "ops": [], "z": [0, "ROOF"]},
-    {"id": "g-stair-front", "ax": "x", "r": [19, 52.75, 29.625, 53.5], "ops": [{"type": "win", "a": 22.13, "b": 26.88, "sill": 3, "head": 7}, {"type": "win", "a": 22.13, "b": 26.88, "sill": 14.4167, "head": 18.4167}], "z": [0, "ROOF"]},
+    {"id": "g-stair-south", "ax": "y", "r": [29.625, 47, 30.375, 53.5], "z": [0, "ROOF"], "ops": []},
+    {"id": "g-stair-front", "ax": "x", "r": [19, 52.75, 29.625, 53.5], "ops": [{"type": "win", "a": 22.13, "b": 26.88, "sill": 3, "head": 7}, {"type": "win", "a": 22.13, "b": 26.88, "sill": 14.4167, "head": 30.416666666666668}], "z": [0, "ROOF"]},
     {"id": "g-stair-north", "ax": "y", "r": [19, 46.4167, 19.375, 52.75], "ops": [{"type": "door", "a": 47.0012, "b": 50.0012, "sill": 0, "head": 7, "hinge": "a", "swing": 1, "isOpen": true}, {"type": "open", "a": 47.0012, "b": 50.0012, "sill": 11.4167, "head": 18.4167}], "z": [0, "ROOF"]},
-    {"id": "g-north-porch", "ax": "y", "r": [0, 28.6333, 0.375, 53], "z": ["PORCH", 6.5], "mat": "stone", "ops": []},
-    {"id": "g-front-pier", "ax": "x", "r": [12, 53.5001, 18.9583, 54.5001], "z": ["PORCH", 6.5], "mat": "stone", "ops": []}
+    {"id": "g-north-porch", "ax": "y", "r": [0, 28.6333, 0.375, 53], "z": ["PORCH", 4.5], "mat": "stone", "ops": []},
+    {"id": "g-front-pier", "ax": "x", "r": [12, 53.5001, 19.0416, 54.5001], "z": ["PORCH", 6.5], "mat": "stone", "ops": []}
   ],
   pillars: [
     {"id": "gp-rear-north", "r": [-1, 0, -0.25, 1.5]},

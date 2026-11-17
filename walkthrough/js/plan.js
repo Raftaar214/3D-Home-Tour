@@ -30,7 +30,9 @@
     if (!base) return null;
     try {
       const q = new URLSearchParams(location.search);
-      const s = window.PLAN_STANDALONE || q.get('original') === '1' ? null : localStorage.getItem(key);
+      // A copy kept in the browser is only used when the pages are opened as plain files (no local
+      // server to save to). With the server running, the plan files are always the record.
+      const s = window.PLAN_STANDALONE || q.get('original') === '1' || location.protocol !== 'file:' ? null : localStorage.getItem(key);
       if (s) {
         const o = JSON.parse(s);
         if (o && o.version === base.version && Array.isArray(o.walls) && Array.isArray(o.pillars)) {
@@ -124,7 +126,7 @@
   const slabs = indoorSlabs.concat(midFloor, outdoor.map((a) => a.r));
   // The front stair (drawn on the ground floor) climbs to a landing beside the front
   // balcony at first floor level, then on to the roof.
-  const FRONT_LANDING = G ? [19.375, 47, 22.13, 52.75] : null;
+  const FRONT_LANDING = G ? [19, 47, 22.13, 52.75] : null;   // runs through the opening in the stair's north wall to the balcony
   if (FRONT_LANDING) slabs.push(FRONT_LANDING);
 
   // Finish floors of the rooms: [x0, y0, x1, y1, material]

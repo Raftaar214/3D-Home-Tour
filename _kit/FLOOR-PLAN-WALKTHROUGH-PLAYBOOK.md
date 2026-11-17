@@ -276,6 +276,14 @@ Copied as typed.
 32. `g-stair-front, g-stair-north,g-stair-south these walls' height is till roof`
 33. `make it to walk on front road too, walkthrough on road`
 
+34. `push on github` / `Yes, push it`
+35. `g-stair-front, g-stair-north,g-stair-south these arent showing in first floor plan editor, remove the car from porch porch walls' height are not editable family loubge to terrace gate is double door`
+36. `remove sofa from balcony`
+
+Notes on 35: the first-floor editor now draws ground-floor walls that rise through it (hatched; click one to jump to the Ground floor tab with it selected). Every wall and pillar has a Height choice; "Set bottom and top" takes heights in feet from that floor's finish (porch level, ceiling and roof are listed). Doors have a Leaves choice: single or double.
+
+**Editor rule learned:** with the local server running, the plan files are the only record. The editor must not keep a copy in the browser that the walkthrough or a reloaded editor would prefer over the file, and the server refuses a save from a page that loaded an older version of the file (it asks for a reload). Old copies kept in a browser had been quietly putting back walls that had since been changed.
+
 Notes on 32–33: plan walls can now run through both floors (`"z": [0, "ROOF"]` in the ground floor file), and a wall can have openings one above the other (a door on each floor). The stair's north wall got an opening onto the front balcony at first-floor level, and its front wall a second window there. The road in front is walkable, the gate stands open, and the tour now starts on the road looking at the house.
 
 How these were built, for reuse:

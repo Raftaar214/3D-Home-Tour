@@ -51,9 +51,24 @@
   const across = (w) => (w.ax === 'x' ? [1, 3] : [0, 2]);
   const lo = (w) => w.r[along(w)[0]], hi = (w) => w.r[along(w)[1]];
   const ops = (w) => w.ops || (w.ops = []);
-  const isLow = (w) => Array.isArray(w.z) && typeof w.z[1] === 'number';
-  const isSpecial = (w) => Array.isArray(w.z) && !(w.z[0] === 0 && typeof w.z[1] === 'number');
-  const item = () => (!sel ? null : sel.kind === 'wall' ? plan.walls[sel.i] : sel.kind === 'op' ? plan.walls[sel.i].ops[sel.j] : sel.kind === 'area' ? plan.areas[sel.i] : sel.kind === 'wardrobe' ? plan.wardrobes[sel.i] : plan.pillars[sel.i]);
+  const isLow = (w) => Array.isArray(w.z) && w.z[0] === 0 && typeof w.z[1] === 'number';
+  // Named heights on this floor, in feet above its own floor finish.
+  const SLABT = +BASE.SLAB || 0.4167;
+  const otherH = () => +((GROUND ? window.PLAN_DATA : window.PLAN_DATA_GROUND) || {}).H || plan.H;
+  function levels() {
+    const t = { H: plan.H, TOP: plan.H + SLABT };
+    if (GROUND) { t.PORCH = -1.5; t.ROOF = plan.H + SLABT + otherH() + SLABT; }
+    else { t.GF = -(otherH() + SLABT); t['-SLAB'] = -SLABT; }
+    return t;
+  }
+  const LEVEL_NAMES = { H: 'ceiling', TOP: 'top of the slab', PORCH: 'car porch level', ROOF: 'top of the roof', GF: 'ground floor', '-SLAB': 'underside of the floor slab' };
+  const zFeet = (v) => (typeof v === 'number' ? v : levels()[v] !== undefined ? levels()[v] : +v || 0);
+  const zToken = (v) => { const t = levels(); for (const k in t) if (Math.abs(t[k] - v) < 0.006) return k; return Math.round(v * 10000) / 10000; };
+  const zRange = (w, full) => (w.z ? [zFeet(w.z[0]), zFeet(w.z[1])] : full);
+  const levelHint = () => 'Heights are from this floor\'s finish: ' + Object.keys(levels()).map((k) => LEVEL_NAMES[k] + ' ' + fmt(levels()[k])).join(', ') + '.';
+  // Walls of the ground floor that rise up through this floor (shown on the first floor, edited on the ground floor tab).
+  const through = () => (!GROUND && A.plan.ground ? A.plan.ground.walls.map((w, i) => ({ w, i })).filter((o) => o.w.z[1] > 1) : []);
+  const item = () => (!sel ? null : sel.kind === 'wall' ? plan.walls[sel.i] : sel.kind === 'op' ? plan.walls[sel.i].ops[sel.j] : sel.kind === 'area' ? plan.areas[sel.i] : sel.kind === 'wardrobe' ? plan.wardrobes[sel.i] : sel.kind === 'through' ? A.plan.ground.walls[sel.i] : plan.pillars[sel.i]);
   function opRect(w, o) {
     return w.ax === 'x' ? [o.a, w.r[1], o.b, w.r[3]] : [w.r[0], o.a, w.r[2], o.b];
   }
@@ -118,7 +133,7 @@
   function save(initial) {
     tidy();
     let ok = true;
-    if (initial && browserCopy) return showStatus(true); // keep the browser's copy until it is used or dropped
+    if (initial) return showStatus(true); // opening the editor saves nothing; the plan file stays the record
     try { localStorage.setItem(KEY, JSON.stringify(plan)); } catch (err) { ok = false; }
     if (disk) pushDisk();
     showStatus(ok);
@@ -181,6 +196,16 @@
       out.push(`<text x="14.5" y="${-2 - 10 * u}" font-size="${11 * u}" text-anchor="middle" fill="#8a7f70" style="pointer-events:none">↑ REAR (east)   ·   ← north   south →</text>`);
     }
     const hit = `stroke="transparent" stroke-width="${9 * u}" style="cursor:pointer"`;
+    // walls of the ground floor that run up through this floor, with their openings at this level
+    for (const { w, i } of through()) {
+      out.push(rect(w.r, `data-kind="through" data-i="${i}" fill="var(--wall)" ${hit}`));
+      out.push(rect(w.r, `fill="url(#up)" style="pointer-events:none"`));
+      for (const o of w.ops || []) {
+        if (w.base + (o.sill || 0) < -0.5 || w.base + o.head < 1) continue;   // openings on the floor below
+        const r = w.ax === 'x' ? [o.a, w.r[1], o.b, w.r[3]] : [w.r[0], o.a, w.r[2], o.b];
+        out.push(rect(r, o.type === 'win' || o.type === 'vent' ? `fill="#dcecf6" stroke="var(--win)" stroke-width="${1.5 * u}" style="pointer-events:none"` : `fill="var(--paper)" stroke="var(--door)" stroke-width="${1.5 * u}" stroke-dasharray="${4 * u} ${3 * u}" style="pointer-events:none"`));
+      }
+    }
     // walls
     plan.walls.forEach((w, i) => {
       if (w.hidden) return;
@@ -198,11 +223,15 @@
         } else {
           const cased = o.type === 'open';
           out.push(rect(r, `${d} fill="var(--paper)" stroke="var(--door)" stroke-width="${1.5 * u}" ${cased ? `stroke-dasharray="${4 * u} ${3 * u}"` : ''} style="cursor:pointer"`));
-          if (!cased) { // leaf and swing arc
-            const wd = o.b - o.a, hp = o.hinge === 'a' ? o.a : o.b, sg = o.swing > 0 ? 1 : -1, face = w.r[across(w)[sg > 0 ? 1 : 0]], dirA = o.hinge === 'a' ? 1 : -1;
-            const tip = face + sg * wd, far = hp + dirA * wd, sweep = (sg * dirA > 0) === (w.ax === 'x') ? 0 : 1;
-            const pth = w.ax === 'x' ? `M${hp} ${face} L${hp} ${tip} A${wd} ${wd} 0 0 ${sweep} ${far} ${face}` : `M${face} ${hp} L${tip} ${hp} A${wd} ${wd} 0 0 ${1 - sweep} ${face} ${far}`;
-            out.push(`<path d="${pth}" fill="none" stroke="var(--door)" stroke-width="${1.2 * u}" ${o.type === 'gdoor' ? `stroke-dasharray="${5 * u} ${2 * u}"` : ''} style="pointer-events:none"/>`);
+          if (!cased) { // leaf and swing arc (two half leaves for a double door)
+            const sg = o.swing > 0 ? 1 : -1, face = w.r[across(w)[sg > 0 ? 1 : 0]];
+            const leaves = o.leaves === 2 ? [[o.a, 1], [o.b, -1]] : [[o.hinge === 'a' ? o.a : o.b, o.hinge === 'a' ? 1 : -1]];
+            const wd = (o.b - o.a) / leaves.length;
+            for (const [hp, dirA] of leaves) {
+              const tip = face + sg * wd, far = hp + dirA * wd, sweep = (sg * dirA > 0) === (w.ax === 'x') ? 0 : 1;
+              const pth = w.ax === 'x' ? `M${hp} ${face} L${hp} ${tip} A${wd} ${wd} 0 0 ${sweep} ${far} ${face}` : `M${face} ${hp} L${tip} ${hp} A${wd} ${wd} 0 0 ${1 - sweep} ${face} ${far}`;
+              out.push(`<path d="${pth}" fill="none" stroke="var(--door)" stroke-width="${1.2 * u}" ${o.type === 'gdoor' ? `stroke-dasharray="${5 * u} ${2 * u}"` : ''} style="pointer-events:none"/>`);
+            }
           }
         }
       });
@@ -225,16 +254,17 @@
       const w = sel.kind === 'op' ? plan.walls[sel.i] : null, r = sel.kind === 'op' ? opRect(w, it) : it.r;
       out.push(rect(r, `fill="none" stroke="var(--sel)" stroke-width="${2.5 * u}" style="pointer-events:none"`));
       const hs = [];
-      const boxy = sel.kind === 'pillar' || sel.kind === 'area' || sel.kind === 'wardrobe';
+      const boxy = sel.kind === 'pillar' || sel.kind === 'area' || sel.kind === 'wardrobe', fixed = sel.kind === 'through';
       const off = (sel.kind === 'area' ? 0 : 10) * u, cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2; // handles sit just outside small items
       if (boxy) hs.push(['x0', r[0] - off, cy], ['x1', r[2] + off, cy], ['y0', cx, r[1] - off], ['y1', cx, r[3] + off]);
       else if ((w || it).ax === 'x') hs.push(['a', r[0] - (w ? 0 : off), cy], ['b', r[2] + (w ? 0 : off), cy]);
       else hs.push(['a', cx, r[1] - (w ? 0 : off)], ['b', cx, r[3] + (w ? 0 : off)]);
+      if (fixed) hs.length = 0;
       for (const [h, x, y] of hs) out.push(`<circle data-kind="handle" data-h="${h}" cx="${x}" cy="${y}" r="${6.5 * u}" fill="#fff" stroke="var(--sel)" stroke-width="${2 * u}" style="cursor:${(boxy ? h[0] === 'x' : (w || it).ax === 'x') ? 'ew-resize' : 'ns-resize'}"/>`);
       const len = boxy ? fmt(r[2] - r[0]) + ' × ' + fmt(r[3] - r[1]) : fmt(sel.kind === 'op' ? it.b - it.a : hi(it) - lo(it));
       out.push(`<text x="${(r[0] + r[2]) / 2}" y="${r[1] - (sel.kind === 'pillar' ? 24 : 12) * u}" font-size="${12.5 * u}" font-weight="600" text-anchor="middle" fill="var(--sel)" stroke="var(--paper)" stroke-width="${3.5 * u}" paint-order="stroke" style="pointer-events:none">${len}</text>`);
     }
-    world.innerHTML = out.join('');
+    world.innerHTML = `<defs><pattern id="up" width="${6 * u}" height="${6 * u}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="${2 * u}" height="${6 * u}" fill="rgba(255,255,255,0.45)"/></pattern></defs>` + out.join('');
     svg.classList.toggle('draw', tool !== 'select');
     $('t-wall').classList.toggle('on', tool === 'wall');
     $('t-pillar').classList.toggle('on', tool === 'pillar');
@@ -262,11 +292,12 @@
       field('len', 'Length', hi(w) - lo(w));
       field('pos', x ? 'Position (Y, from rear)' : 'Position (X, from north)', w.r[a0]);
       field('th', 'Thickness', w.r[across(w)[1]] - w.r[a0]);
-      if (isSpecial(w)) rows.push({ note: 'This wall runs through more than one floor (below the floor, or up to the roof). Its height is kept as it is.' });
-      else {
-        field('kind', 'Height', isLow(w) ? 'low' : 'full', 'select', { full: 'Floor to ceiling', low: 'Low wall' });
-        if (isLow(w)) field('top', 'Low wall height', w.z[1]);
-      }
+      const hk = !w.z ? 'full' : isLow(w) ? 'low' : GROUND && w.z[0] === 0 && w.z[1] === 'ROOF' ? 'roof' : 'custom';
+      const kinds = { full: 'Floor to ceiling', low: 'Low wall', custom: 'Set bottom and top' };
+      if (GROUND) kinds.roof = 'Up to the roof (through the first floor)';
+      field('kind', 'Height', hk, 'select', kinds);
+      if (hk === 'low') field('top', 'Low wall height', w.z[1]);
+      if (hk === 'custom' || hk === 'roof') { const zr = zRange(w, [0, plan.H]); field('zb', 'Bottom', zr[0]); field('zt', 'Top', zr[1]); rows.push({ note: levelHint() }); }
       rows.push({ note: x ? 'Runs north to south.' : 'Runs rear to front.' });
     } else if (sel.kind === 'op') {
       const o = it, w = plan.walls[sel.i], x = w.ax === 'x';
@@ -277,10 +308,12 @@
       if (o.type === 'win' || o.type === 'vent') field('sill', 'Sill height', o.sill);
       field('head', 'Top height', o.head);
       if (o.type === 'door' || o.type === 'gdoor') {
-        field('hinge', 'Hinge at', o.hinge || 'a', 'select', x ? { a: 'North side', b: 'South side' } : { a: 'Rear side', b: 'Front side' });
         field('swing', 'Opens toward', String(o.swing > 0 ? 1 : -1), 'select', x ? { '-1': 'Rear (east)', 1: 'Road (west)' } : { '-1': 'North', 1: 'South' });
+        field('leaves', 'Leaves', o.leaves === 2 ? '2' : '1', 'select', { 1: 'Single door', 2: 'Double door (two leaves)' });
+        if (o.leaves !== 2) field('hinge', 'Hinge at', o.hinge || 'a', 'select', x ? { a: 'North side', b: 'South side' } : { a: 'Rear side', b: 'Front side' });
         field('isOpen', 'Shown in 3D', o.isOpen ? '1' : '0', 'select', { 1: 'Open', 0: 'Closed' });
       }
+      if ((o.sill || 0) > plan.H) rows.push({ note: 'This opening is on the floor above (the wall runs up through it).' });
       rows.push({ note: 'In wall "' + w.id + '".' });
     } else if (sel.kind === 'wardrobe') {
       const w = it;
@@ -312,7 +345,13 @@
       field('y', 'Y (rear face)', p.r[1]);
       field('pw', 'Width (north to south)', p.r[2] - p.r[0]);
       field('pd', 'Depth (rear to front)', p.r[3] - p.r[1]);
-      if (p.z) rows.push({ note: 'This pillar also runs below the floor. Its height is kept as it is.' });
+      field('kind', 'Height', p.z ? 'custom' : 'full', 'select', { full: 'Floor to ceiling', custom: 'Set bottom and top' });
+      if (p.z) { const zr = zRange(p, [0, plan.H]); field('zb', 'Bottom', zr[0]); field('zt', 'Top', zr[1]); rows.push({ note: levelHint() }); }
+    }
+    if (sel.kind === 'through') { // a wall of the ground floor seen from the first floor: shown here, edited there
+      const w = it, raw = (window.PLAN_DATA_GROUND.walls || []).find((q) => q.id === w.id);
+      box.innerHTML = `<div class="what">Wall from the ground floor</div><p class="hint"><b>${String(w.id).replace(/</g, '&lt;')}</b> stands on the ground floor and rises up through this floor${raw && raw.z && raw.z[1] === 'ROOF' ? ' to the roof' : ''}. Its openings at this level are drawn here.</p><p class="hint">It belongs to the ground floor plan, so change it there.</p><div class="row"><a class="btn primary" href="editor.html?floor=ground&sel=${encodeURIComponent(w.id)}">Edit on the Ground floor tab</a></div>`;
+      return;
     }
     const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
     box.innerHTML = `<div class="what">${esc(title)}</div>` + rows.map((r) => {
@@ -344,8 +383,18 @@
       if (key === 'len') w.r[e] = Math.max(w.r[s] + Math.max(0.25, v), lastOp);
       if (key === 'pos') { const th = w.r[t1] - w.r[t0]; w.r[t0] = v; w.r[t1] = v + th; }
       if (key === 'th') w.r[t1] = w.r[t0] + Math.max(0.1, v);
-      if (key === 'kind') { if (v === 'low') w.z = [0, 3.5]; else delete w.z; }
+      if (key === 'kind') {
+        if (v === 'low') w.z = [0, 3.5];
+        else if (v === 'roof') w.z = [0, 'ROOF'];
+        else if (v === 'custom') { const zr = zRange(w, [0, plan.H]); w.z = [zToken(zr[0]), zToken(zr[1])]; }
+        else delete w.z;
+      }
       if (key === 'top') w.z = [0, Math.max(0.5, v)];
+      if (key === 'zb' || key === 'zt') {
+        const zr = zRange(w, [0, plan.H]);
+        if (key === 'zb') zr[0] = Math.min(v, zr[1] - 0.25); else zr[1] = Math.max(v, zr[0] + 0.25);
+        w.z = [zToken(zr[0]), zToken(zr[1])];
+      }
     } else if (sel.kind === 'op') {
       const o = it, w = plan.walls[sel.i], [la, lb] = limits(w, sel.j), wd = o.b - o.a;
       if (key === 'type') {
@@ -360,6 +409,7 @@
       if (key === 'hinge') o.hinge = v;
       if (key === 'swing') o.swing = +v;
       if (key === 'isOpen') o.isOpen = v === '1';
+      if (key === 'leaves') { if (v === '2') o.leaves = 2; else delete o.leaves; }
     } else {
       const p = it, pw = p.r[2] - p.r[0], pd = p.r[3] - p.r[1];
       if (key === 'id') p.id = String(v).trim() || p.id;
@@ -368,6 +418,14 @@
       if (key === 'tall') { if (v === 'full') delete p.h; else p.h = 7; }
       if (key === 'wh') p.h = Math.min(Math.max(1, v), plan.H);
       if (key === 'mirror') { if (v === '1') p.mirror = true; else delete p.mirror; }
+      if (sel.kind === 'pillar') {
+        if (key === 'kind') { if (v === 'full') delete p.z; else { const zr = zRange(p, [0, plan.H]); p.z = [zToken(zr[0]), zToken(zr[1])]; } }
+        if (key === 'zb' || key === 'zt') {
+          const zr = zRange(p, [0, plan.H]);
+          if (key === 'zb') zr[0] = Math.min(v, zr[1] - 0.25); else zr[1] = Math.max(v, zr[0] + 0.25);
+          p.z = [zToken(zr[0]), zToken(zr[1])];
+        }
+      }
       if (key === 'x') { p.r[0] = v; p.r[2] = v + pw; }
       if (key === 'y') { p.r[1] = v; p.r[3] = v + pd; }
       if (key === 'pw') p.r[2] = p.r[0] + Math.max(0.25, v);
@@ -378,7 +436,7 @@
 
   // --- adding and removing ----------------------------------------------------------------------
   function removeSel() {
-    if (!sel) return;
+    if (!sel || sel.kind === 'through') return;
     checkpoint();
     if (sel.kind === 'wall') plan.walls.splice(sel.i, 1);
     else if (sel.kind === 'op') plan.walls[sel.i].ops.splice(sel.j, 1);
@@ -452,7 +510,7 @@
     }
     if (t) {
       sel = { kind: t.dataset.kind, i: +t.dataset.i, j: t.dataset.j === undefined ? undefined : +t.dataset.j };
-      drag = { mode: 'move', start: p, orig: clone(item()), first: true };
+      drag = sel.kind === 'through' ? null : { mode: 'move', start: p, orig: clone(item()), first: true };
       render(); panel();
       return;
     }
@@ -610,7 +668,7 @@
     if (e.key === 'Escape') { tool = 'select'; sel = null; drag = null; render(); panel(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); removeSel(); return; }
     const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-    if (arrow && sel) {
+    if (arrow && sel && sel.kind !== 'through') {
       e.preventDefault();
       const st = (snapStep() || 1 / 12) * (e.shiftKey ? 6 : 1), dx = arrow[0] * st, dy = arrow[1] * st, it = item();
       checkpoint();
@@ -632,6 +690,8 @@
   $('g-h').value = fmt(plan.H);
   fit();
   save(true);
+  { const want = new URLSearchParams(location.search).get('sel'), wi = want ? plan.walls.findIndex((w) => w.id === want) : -1; if (wi >= 0) sel = { kind: 'wall', i: wi }; }
+  render();
   panel();
   // always open the walkthrough fresh, never a remembered copy of the page
   document.querySelectorAll('a[href="index.html"]').forEach((el) => el.addEventListener('click', () => { el.href = 'index.html?t=' + Date.now(); }));

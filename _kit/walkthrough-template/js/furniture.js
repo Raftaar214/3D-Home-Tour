@@ -670,9 +670,6 @@
     put(roundTable(1.5, 2.4, M.teak, M.metal), 4.2, 42.3, 0); // outdoor dining under the pergola
     for (let i = 0; i < 4; i++) { const a = (i * Math.PI) / 2 + 0.6; put(chair(M.fabGrey), 4.2 + Math.sin(a) * 2.35, 42.3 + Math.cos(a) * 2.35, (a * 180) / Math.PI + 180); }
     put(plant(4.0, M.pot, true), 8.15, 45.2, 0);
-    put(sofa(2.7, M.fabGrey, null, null, 2.5), 10.6, 48.75, 205);
-    put(sofa(2.7, M.fabGrey, null, null, 2.5), 14.3, 48.75, 155);
-    put(roundTable(0.7, 1.5, M.teak, M.metal), 12.45, 49.5, 0);
     put(plant(3.6, M.pot, true), 6.4, 49.7, 0);
     put(plant(3.0, M.potWhite), 16.9, 49.95, 0);
     put(plant(3.2, M.potWhite), -2.3, 1.2, 0);

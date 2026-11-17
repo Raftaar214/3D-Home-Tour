@@ -214,7 +214,7 @@
     K.rugAt(M.rugGF, 4.25, 29.8, 3.4, 1.9, GF);
     put(K.plant(3.0, M.potWhite), 12.75, 39.85, 0);
     K.put(K.plant(3.4, M.potWhite), 1.2, 52.0, 0, PL);
-    { // a parked car, kept to the south side so the way to the door stays clear
+    if (false) { // (car removed at the architect's request)
       const car = new T.Group(), body = M.car || M.steel;
       car.add(K.rb(5.5, 1.7, 13.2, 0.45, body, 0, 0.75, 0));
       car.add(K.rb(4.9, 1.55, 6.6, 0.5, M.black, 0, 2.3, -0.5));

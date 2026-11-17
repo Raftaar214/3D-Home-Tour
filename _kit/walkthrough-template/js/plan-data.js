@@ -24,11 +24,11 @@ window.PLAN_DATA = {
     {"id": "washroom-door", "ax": "y", "r": [18.8335, 8.0421, 19.2085, 14.5004], "ops": [{"type": "door", "a": 8.1505, "b": 10.4005, "sill": 0, "head": 7, "hinge": "a", "swing": 1, "isOpen": true}]},
     {"id": "south", "ax": "y", "r": [29.625, 0, 30.375, 47], "z": ["GF", "H"], "ops": []},
     {"id": "lounge-north", "ax": "y", "r": [-0.375, 14.625, 0.375, 28.625], "ops": [{"type": "win", "a": 18.13, "b": 24.4, "sill": 2.5, "head": 8}]},
-    {"id": "lounge-terrace", "ax": "x", "r": [0.375, 27.875, 9.25, 28.625], "ops": [{"type": "win", "a": 0.75, "b": 2, "sill": 0.4166666666666667, "head": 8}, {"type": "door", "a": 2, "b": 6.5, "sill": 0, "head": 8, "hinge": "a", "swing": -1, "isOpen": true}, {"type": "win", "a": 6.5, "b": 7.75, "sill": 0.4166666666666667, "head": 8}]},
+    {"id": "lounge-terrace", "ax": "x", "r": [0.375, 27.875, 9.25, 28.625], "ops": [{"type": "win", "a": 0.75, "b": 2, "sill": 0.4166666666666667, "head": 8}, {"type": "door", "a": 2, "b": 6.5, "sill": 0, "head": 8, "hinge": "a", "swing": -1, "isOpen": true, "leaves": 2}, {"type": "win", "a": 6.5, "b": 7.75, "sill": 0.4166666666666667, "head": 8}]},
     {"id": "bedroom-east", "ax": "x", "r": [9.25, 27.875, 29.625, 28.25], "ops": [{"type": "door", "a": 9.3, "b": 12.75, "sill": 0, "head": 7, "hinge": "a", "swing": 1, "isOpen": true}, {"type": "win", "a": 15.4173, "b": 19.4173, "sill": 3, "head": 7}]},
     {"id": "bedroom-north", "ax": "y", "r": [8.875, 28.625, 9.25, 47], "ops": []},
     {"id": "bedroom-south", "ax": "y", "r": [22.25, 28.25, 22.625, 46.25], "ops": [{"type": "open", "a": 41.5, "b": 44.25, "sill": 0, "head": 7, "hinge": "a", "swing": 1, "isOpen": true}]},
-    {"id": "front", "ax": "x", "r": [9.25, 46.25, 29.625, 47], "ops": [{"type": "win", "a": 9.7, "b": 15.5, "sill": 2.5, "head": 8}, {"type": "gdoor", "a": 17.03, "b": 19.76, "sill": 0, "head": 8, "hinge": "a", "swing": -1, "isOpen": true}]},
+    {"id": "front", "ax": "x", "r": [9.25, 46.25, 29.625, 47], "ops": [{"type": "win", "a": 9.7, "b": 15.5, "sill": 2.5, "head": 8}, {"type": "gdoor", "a": 17.03, "b": 18.9267, "sill": 0, "head": 8, "hinge": "a", "swing": -1, "isOpen": true}]},
     {"id": "toilet-dress", "ax": "x", "r": [22.625, 37.875, 30, 38.25], "ops": [{"type": "door", "a": 24, "b": 26.75, "sill": 0, "head": 7, "hinge": "a", "swing": -1, "isOpen": true}]},
     {"id": "suite-south-liner", "ax": "y", "r": [29.25, 28.25, 29.625, 31.25], "ops": []},
     {"id": "terrace-parapet", "ax": "y", "r": [0, 28.625, 0.375, 45.7667], "z": [0, 3.5], "mat": "stone", "ops": []},
@@ -52,7 +52,7 @@ window.PLAN_DATA = {
   areas: [
     {"id": "void", "name": "Double Height", "kind": "void", "r": [13.2083, 14.625, 26.125, 24.375]},
     {"id": "terrace", "name": "Terrace", "kind": "terrace", "r": [0, 28.625, 8.875, 47]},
-    {"id": "front-balcony", "name": "Front Balcony", "kind": "balcony", "r": [5.39, 47, 19.875, 50.54]},
+    {"id": "front-balcony", "name": "Front Balcony", "kind": "balcony", "r": [5.39, 47, 19.0417, 50.54]},
     {"id": "rear-balcony", "name": "Rear Balcony", "kind": "balcony", "r": [-3.5, -2, 30.375, 0]},
     {"id": "north-balcony", "name": "Rear Balcony", "kind": "balcony", "r": [-3.5, 0, -1, 14.625]}
   ],
