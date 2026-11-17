@@ -297,10 +297,10 @@
     const gzr = (z) => (z ? [GF + gv(z[0]), GF + gv(z[1])] : [GF, GF + HG]);
     const gwalls = G.walls.map((w) => {
       const z = gzr(w.z);
-      return { id: w.id, ax: w.ax, r: w.r.slice(), z, base: GF, grp: 'gmain', mat: w.mat || 'wall', rail: w.rail, railTop: w.railTop,
+      return { id: w.id, ax: w.ax, r: w.r.slice(), z, base: GF, grp: 'gmain', mat: w.mat || 'wall', rail: w.rail, railTop: w.railTop, clad: w.clad,
         ops: (w.ops || []).map((o) => Object.assign({}, o, { head: Math.min(o.head, z[1] - GF) })) };
     });
-    const gpillars = G.pillars.map((p) => ({ id: p.id, r: p.r.slice(), z: gzr(p.z), mat: p.mat || 'wall', grp: 'gmain' }));
+    const gpillars = G.pillars.map((p) => ({ id: p.id, r: p.r.slice(), z: gzr(p.z), mat: p.mat || 'wall', grp: 'gmain', clad: p.clad }));
     const gareas = (G.areas || []).map((a) => ({ id: a.id, name: a.name || a.id, kind: a.kind, r: a.r.slice(), lvl: GF + (a.kind === 'porch' ? PORCH : 0) }));
     const gwardrobes = (G.wardrobes || []).map((w) => ({ id: w.id, r: w.r.slice(), face: w.face || 'rear', h: Math.min(+w.h || HG, HG), mirror: !!w.mirror }));
 
@@ -377,12 +377,19 @@
     areas.push([19, 47, FX0, 50, GF]);                           // through the stair door and inside it
     areas.push(...frontRun(GF, RF), ...frontRun(0, RT));
     areas.push([19.375, 47, FX0, 52.75, TOP]);                   // landing on the roof
-    const roof = ceilings.slice(0, 4);
+    // the whole roof, including the roof over the front balcony (a roof terrace, part of the roof)
+    const roof = ceilings.slice();
     for (const c of roof) areas.push([c[0], c[1], c[2], c[3], TOP]);
     solids.push([FX0, 49.76, FX1, 50.01, GF, TOP]);              // the wall between the flights
-    // a 3 ft parapet round the roof, open only where the stair landing joins it (the road-side
-    // edge is cut at the landing's sides, so the wall stays on either side of the opening)
-    const parapet = boundary(roof, (x, y, nx, ny) => !(ny === 1 && Math.abs(y - 47) < 0.01 && x > 19.375 && x < FX0), [19.375, FX0]);
+    /* A 3 ft parapet round the roof, open only where the stair landing joins it (the edge is cut
+       at the landing's sides, so the wall stays on either side of the opening), and left out
+       where a wall of the floor below rises above the roof (the stair tower). */
+    const above = gwalls.filter((w) => w.z[1] > TOP + 1).map((w) => w.r);
+    const parapet = boundary(roof, (x, y, nx, ny) => {
+      if (ny === 1 && Math.abs(y - 47) < 0.01 && x > 19.375 && x < FX0) return false;
+      const ox = x + nx * 0.1, oy = y + ny * 0.1;
+      return !above.some((r) => ox > r[0] && ox < r[2] && oy > r[1] && oy < r[3]);
+    }, [19.375, FX0].concat(above.flatMap((r) => [r[0], r[2]])), above.flatMap((r) => [r[1], r[3]]));
     for (const s of parapet) {
       const t = 0.375, a = s.c - (s.n > 0 ? t : 0), b = s.c + (s.n < 0 ? t : 0);
       solids.push(s.dir === 'y' ? [a, s.a, b, s.b, TOP, TOP + 3] : [s.a, a, s.b, b, TOP, TOP + 3]);

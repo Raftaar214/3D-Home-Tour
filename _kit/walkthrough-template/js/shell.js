@@ -305,6 +305,44 @@
       }
     }
 
+    // --- cladding: charcoal grey WPC panels -----------------------------------
+    /* On the outer faces of chosen walls (a face is outer when no room, and not the stair, lies
+       beyond it), stopping at openings and wrapping round outer wall ends, and all round chosen
+       pillars. Chosen in the plan (wall.clad) or in this home's list. */
+    const CLAD = ['g-stair-front', 'g-stair-north', 'g-stair-south', 'gp-porch-1', 'gp-porch-2'];
+    function cladding(walls, pillars, interior) {
+      const T_ = 0.06, isIn = (x, y, list) => list.some((f) => x > f[0] && x < f[2] && y > f[1] && y < f[3]);
+      const wallRects = walls.map((w) => w.r);
+      for (const w of walls) {
+        if (!(w.clad || CLAD.includes(w.id))) continue;
+        const ax = w.ax, [x0, y0, x1, y1] = w.r, fl = w.base || 0, z0 = w.z[0], z1 = w.z[1];
+        const lo = ax === 'x' ? x0 : y0, hi = ax === 'x' ? x1 : y1, t0 = ax === 'x' ? y0 : x0, t1 = ax === 'x' ? y1 : x1, mid = (lo + hi) / 2;
+        const pt = (u, t) => (ax === 'x' ? [u, t] : [t, u]);
+        const outside = (u, t) => { const [px, py] = pt(u, t); return !isIn(px, py, interior) && !isIn(px, py, wallRects.filter((r) => r !== w.r)); };
+        const endA = outside(lo - 0.4, (t0 + t1) / 2), endB = outside(hi + 0.4, (t0 + t1) / 2); // bare wall ends get panels too
+        const ops = w.ops || [];
+        const cuts = Array.from(new Set([lo, hi].concat(ops.flatMap((o) => [o.a, o.b])).filter((v) => v >= lo && v <= hi))).sort((p, q) => p - q);
+        const solidZ = (m) => { // heights of solid wall at a point along it, between its openings
+          const holes = ops.filter((o) => o.a < m && o.b > m).map((o) => [fl + (o.sill || 0), fl + o.head]).sort((p, q) => p[0] - q[0]);
+          const out = []; let cur = z0;
+          for (const [h0, h1] of holes) { if (h0 - cur > 0.05) out.push([cur, h0]); cur = Math.max(cur, h1); }
+          if (z1 - cur > 0.05) out.push([cur, z1]);
+          return out;
+        };
+        for (const [s, t] of [[-1, t0], [1, t1]]) {
+          if (!outside(mid, t + s * 0.4)) continue;
+          for (let i = 0; i < cuts.length - 1; i++) {
+            const a = cuts[i] - (i === 0 && endA ? T_ : 0), b = cuts[i + 1] + (i === cuts.length - 2 && endB ? T_ : 0);
+            for (const [za, zb] of solidZ((cuts[i] + cuts[i + 1]) / 2)) lb('wpc', ax, a, b, s < 0 ? t - T_ : t, s < 0 ? t : t + T_, za, zb);
+          }
+        }
+        for (const [u, end] of [[lo, endA], [hi, endB]]) if (end) { // the wall's own end face
+          for (const [za, zb] of solidZ(u === lo ? lo + 0.01 : hi - 0.01)) lb('wpc', ax, u === lo ? lo - T_ : hi, u === lo ? lo : hi + T_, t0, t1, za, zb);
+        }
+      }
+      for (const p of pillars) if (p.clad || CLAD.includes(p.id)) box('wpc', p.r[0] - T_, p.r[1] - T_, p.r[2] + T_, p.r[3] + T_, p.z[0], p.z[1]);
+    }
+
     // --- walls ------------------------------------------------------------
     function buildWalls(list, floorList) {
       cornerWindows(list);
@@ -370,6 +408,7 @@
       G = 'gmain';
       const PL = GF + GR.PORCH;
       buildWalls(GR.walls, GR.floors.concat([[19, 47, 29.625, 52.75, 'stonefloor', GF]]));
+      cladding(GR.walls, GR.pillars, GR.roomFloors.concat([[19, 47, 29.625, 52.75]]));
       // the home's name plate, modelled in Blender, on the road face of the gate pier at eye level
       const pier = GR.walls.find((w) => w.id === 'g-front-pier');
       if (pier && HAS('nameplate')) {
@@ -426,7 +465,7 @@
       if (!above('g-stair-north')) glassRun([19.45, 52.66, TOPL], [19.45, 47.05, TOPL], 0, 'both'); //   north side
       glassRun([X0 + R0, 47.05, TOPL], [X0 + R0, 49.76, TOPL], 0, 'both');     //   over the flight below
       // roof finish: terrace tiles on top of the roof slab
-      for (const c of P.ceilings.slice(0, 4)) box('stonefloor', c[0], c[1], c[2], c[3], TOPL, TOPL + 0.02, 'ceil');
+      for (const c of P.ceilings) box('stonefloor', c[0], c[1], c[2], c[3], TOPL, TOPL + 0.02, 'ceil'); // incl. the roof over the front balcony
       // parapet round the roof (part of the roof, so the dollhouse view lifts it off too)
       for (const s of (A.frontStair || {}).parapet || []) {
         const t = 0.375, a = s.c - (s.n > 0 ? t : 0), b = s.c + (s.n < 0 ? t : 0);

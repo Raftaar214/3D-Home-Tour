@@ -343,6 +343,18 @@
     M.ash = std({ map: tex(512, (g, s, R) => wood(g, s, R, 40, 20, 74, 512, 0, 3), 26), roughness: 0.5 }); S.ash = 3;
     M.honey = std({ map: tex(512, (g, s, R) => wood(g, s, R, 30, 46, 46, 512, 0, 3), 27), roughness: 0.46 }); S.honey = 3;
     M.travertine = std({ map: tex(512, (g, s, R) => marble(g, s, R, '#dacfbb', '170,150,122', 1, 3), 28), roughness: 0.55 }); S.travertine = 3;
+    // WPC wall panels, charcoal grey: vertical slats about 3" wide with a shadow groove between, faint grain
+    const tWpc = tex(256, (g, s, R) => {
+      const n = 6, w = s / n;
+      for (let i = 0; i < n; i++) {
+        const gr = g.createLinearGradient(i * w, 0, (i + 1) * w, 0);
+        gr.addColorStop(0, '#2a2b2d'); gr.addColorStop(0.12, '#45474a'); gr.addColorStop(0.5, '#4d5054'); gr.addColorStop(0.88, '#404245'); gr.addColorStop(1, '#232426');
+        g.fillStyle = gr; g.fillRect(i * w, 0, w, s);
+        g.fillStyle = '#151617'; g.fillRect(i * w, 0, Math.max(1, w * 0.05), s);
+      }
+      for (let k = 0; k < 220; k++) { g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.05)'; g.fillRect(R() * s, R() * s, 1, 6 + R() * 30); }
+    }, 35);
+    M.wpc = std({ map: tWpc, roughness: 0.62 }); S.wpc = 1.5;
     // the gate pier's name plate: polished dark stone, brass lettering (the same in every style)
     M.plaque = std({ color: 0x23201d, roughness: 0.22, metalness: 0.1, envMapIntensity: 0.9 });
     M.gilt = std({ color: 0xc9a45c, roughness: 0.28, metalness: 1.0 });

@@ -36,8 +36,8 @@ window.PLAN_DATA = {
     {"id": "void-west-low", "ax": "x", "r": [9, 27.875, 29.625, 28.25], "z": ["GF", 0], "hidden": true},
     {"id": "void-north-low", "ax": "y", "r": [9, 14.625, 9.375, 27.875], "z": ["GF", "-SLAB"], "hidden": true},
     {"id": "wall-23", "ax": "x", "r": [0.3335, 46.5836, 5.5834, 46.9586], "z": [0, 3.5], "ops": []},
-    {"id": "wall-24", "ax": "x", "r": [15.0007, 50.4166, 19.0007, 50.9166], "z": [0, 3.5], "ops": []},
-    {"id": "wall-25", "ax": "y", "r": [15.0007, 50.0834, 15.5007, 50.9167], "z": [0, 3.5], "ops": []},
+    {"id": "wall-24", "ax": "x", "r": [15.0007, 50.6665, 19.0007, 51.1665], "z": [0, 3.5], "ops": []},
+    {"id": "wall-25", "ax": "y", "r": [15.0007, 50.3333, 15.5007, 51.1666], "z": [0, 3.5], "ops": []},
     {"id": "wall-26", "ax": "y", "r": [5.0834, 46.9167, 5.5834, 50.8334], "z": [0, 1.5], "ops": []},
     {"id": "wall-27", "ax": "x", "r": [5.0832, 50.3335, 14.9999, 50.8335], "z": [0, 1.5], "ops": []}
   ],
@@ -56,7 +56,7 @@ window.PLAN_DATA = {
   areas: [
     {"id": "void", "name": "Double Height", "kind": "void", "r": [13.2083, 14.625, 26.125, 24.375]},
     {"id": "terrace", "name": "Terrace", "kind": "terrace", "r": [0, 28.625, 8.875, 47]},
-    {"id": "front-balcony", "name": "Front Balcony", "kind": "balcony", "r": [5.39, 47, 19.0417, 50.54]},
+    {"id": "front-balcony", "name": "Front Balcony", "kind": "balcony", "r": [5.39, 47, 19.0417, 50.7067]},
     {"id": "rear-balcony", "name": "Rear Balcony", "kind": "balcony", "r": [-3.5, -2, 30.375, 0]},
     {"id": "north-balcony", "name": "Rear Balcony", "kind": "balcony", "r": [-3.5, 0, -1, 14.625]}
   ],

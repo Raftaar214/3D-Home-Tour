@@ -50,7 +50,7 @@ window.PLAN_DATA_GROUND = {
     {"id": "g-stair-south", "ax": "y", "r": [29.625, 47, 30.375, 53.5], "z": [0, 30.833333333333332], "ops": []},
     {"id": "g-stair-front", "ax": "x", "r": [19, 52.75, 29.625, 53.5], "ops": [{"type": "vent", "a": 22.13, "b": 26.88, "sill": 3, "head": 29}], "z": [0, 30.8334]},
     {"id": "g-stair-north", "ax": "y", "r": [19, 47, 19.375, 52.75], "ops": [{"type": "door", "a": 47.0012, "b": 50.0012, "sill": 0, "head": 8, "hinge": "a", "swing": 1, "isOpen": true}, {"type": "open", "a": 47.0012, "b": 50.0012, "sill": 11.4167, "head": 19.4167}], "z": [0, 30.8334]},
-    {"id": "g-north-porch", "ax": "y", "r": [0, 28.6333, 0.375, 53], "z": ["PORCH", 4.5], "mat": "stone", "ops": []},
+    {"id": "g-north-porch", "ax": "y", "r": [0.0833, 28.6333, 0.4583, 53], "z": ["PORCH", 4.5], "mat": "stone", "ops": []},
     {"id": "g-front-pier", "ax": "x", "r": [12, 53.5001, 19.0416, 54.5001], "z": ["PORCH", 5.5], "mat": "stone", "ops": []}
   ],
   pillars: [
@@ -64,7 +64,7 @@ window.PLAN_DATA_GROUND = {
     {"id": "gp-front-south", "r": [29.25, 45.5, 30, 47]},
     {"id": "gp-porch-1", "r": [0, 38.75, 0.75, 40.25], "z": ["PORCH", "H"], "mat": "stone"},
     {"id": "gp-porch-2", "r": [0, 45.5, 0.75, 47], "z": ["PORCH", "H"], "mat": "stone"},
-    {"id": "gp-gate", "r": [0, 53, 1.5, 54.5], "z": ["PORCH", 5.5], "mat": "stone"}
+    {"id": "gp-gate", "r": [-0.1666, 53, 1.3334, 54.5], "z": ["PORCH", 5.5], "mat": "stone"}
   ],
   areas: [
     {"id": "porch", "name": "Car Porch", "kind": "porch", "r": [0.375, 39, 12, 54.5]},
