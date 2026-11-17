@@ -1,10 +1,13 @@
-/* Turns the editable plan (plan-data.js, or the copy saved by the plan editor in
-   this browser) into everything the 3D model needs. Units are feet; see
-   plan-data.js for the axes. Heights are measured up from the first floor finish. */
+/* Turns the editable plans (plan-data.js for the first floor, plan-data-ground.js
+   for the ground floor, or the copies saved by the plan editor in this browser)
+   into everything the 3D model needs. Units are feet; see plan-data.js for the
+   axes. Heights are measured up from the first floor finish, so the ground floor
+   sits at a negative height (GF). */
 (function () {
   const A = (window.APP = window.APP || {});
-  const KEY = 'arch.plan.firstfloor';
+  const KEY = 'arch.plan.firstfloor', GKEY = 'arch.plan.ground';
   A.PLAN_KEY = KEY;
+  A.PLAN_KEY_G = GKEY;
 
   // Used when a plan file or a saved copy has no "areas" list yet.
   A.DEFAULT_AREAS = [
@@ -21,33 +24,40 @@
     { id: 'dress-wardrobe-2', r: [27.25, 38.25, 29.25, 44.25], face: 'north', mirror: true },
   ];
 
-  // --- pick the plan: the editor's saved copy wins, unless ?original=1 --------
-  const base = window.PLAN_DATA;
-  let D = base;
+  // --- pick the plans: the editor's saved copy wins, unless ?original=1 --------
   A.planEdited = false;
-  try {
-    const q = new URLSearchParams(location.search);
-    const s = window.PLAN_STANDALONE || q.get('original') === '1' ? null : localStorage.getItem(KEY);
-    if (s) {
-      const o = JSON.parse(s);
-      if (o && o.version === base.version && Array.isArray(o.walls) && Array.isArray(o.pillars)) {
-        D = Object.assign({}, base, { H: o.H, walls: o.walls, pillars: o.pillars, areas: o.areas || base.areas, wardrobes: o.wardrobes || base.wardrobes });
-        A.planEdited = true;
+  function chosen(base, key) {
+    if (!base) return null;
+    try {
+      const q = new URLSearchParams(location.search);
+      const s = window.PLAN_STANDALONE || q.get('original') === '1' ? null : localStorage.getItem(key);
+      if (s) {
+        const o = JSON.parse(s);
+        if (o && o.version === base.version && Array.isArray(o.walls) && Array.isArray(o.pillars)) {
+          A.planEdited = true;
+          return Object.assign({}, base, { H: o.H, walls: o.walls, pillars: o.pillars, areas: o.areas || base.areas, wardrobes: o.wardrobes || base.wardrobes });
+        }
       }
-    }
-  } catch (err) { /* storage not available: use the file as it is */ }
+    } catch (err) { /* storage not available: use the file as it is */ }
+    return base;
+  }
+  const D = chosen(window.PLAN_DATA, KEY);
+  const G = chosen(window.PLAN_DATA_GROUND || null, GKEY);   // null when the home has no ground floor drawing
 
-  const H = +D.H || 11;       // floor to ceiling
-  const SLAB = D.SLAB;        // slab thickness (assumed)
-  const GF = -(H + SLAB);     // ground floor level below the first floor
-  const DOOR = D.DOOR;        // door and window head height (assumed)
+  const H = +D.H || 11;                 // first floor: floor to ceiling
+  const SLAB = D.SLAB;                  // slab thickness (assumed)
+  const HG = G ? +G.H || H : H;         // ground floor: floor to ceiling
+  const GF = -(HG + SLAB);              // ground floor level below the first floor
+  const PORCH = -1.5;                   // car porch, below the ground floor finish
+  const DOOR = D.DOOR;                  // door and window head height (assumed)
   const zval = (v) => (v === 'GF' ? GF : v === 'H' ? H : v === 'TOP' ? H + SLAB : v === '-SLAB' ? -SLAB : +v);
-  const zr = (z) => (z ? [zval(z[0]), zval(z[1])] : [0, H]);
+  // With a real ground floor below, first-floor pieces stop at the underside of their own slab.
+  const zr = (z) => { const o = z ? [zval(z[0]), zval(z[1])] : [0, H]; if (G && o[0] < -SLAB) o[0] = -SLAB; return o; };
 
-  const walls = D.walls.map((w) => ({
-    id: w.id, ax: w.ax, r: w.r.slice(), z: zr(w.z), mat: w.mat || 'wall',
+  const walls = D.walls.filter((w) => !(G && w.hidden)).map((w) => ({
+    id: w.id, ax: w.ax, r: w.r.slice(), z: zr(w.z), base: 0, mat: w.mat || 'wall',
     ops: (w.ops || []).map((o) => Object.assign({}, o, { head: Math.min(o.head, zr(w.z)[1]) })),
-  }));
+  })).filter((w) => w.z[1] - w.z[0] > 0.01);
   const pillars = D.pillars.map((p) => ({ id: p.id, r: p.r.slice(), z: zr(p.z), mat: p.mat || 'wall' }));
   const areaList = (D.areas || A.DEFAULT_AREAS).map((a) => ({ id: a.id, name: a.name || a.id, kind: a.kind, r: a.r.slice() }));
   const areaById = {};
@@ -112,6 +122,10 @@
   ];
   // Structural slab pieces (top just below finish level).
   const slabs = indoorSlabs.concat(midFloor, outdoor.map((a) => a.r));
+  // The front stair (drawn on the ground floor) climbs to a landing beside the front
+  // balcony at first floor level, then on to the roof.
+  const FRONT_LANDING = G ? [19.375, 47, 22.13, 52.75] : null;
+  if (FRONT_LANDING) slabs.push(FRONT_LANDING);
 
   // Finish floors of the rooms: [x0, y0, x1, y1, material]
   const roomFloors = [
@@ -128,6 +142,7 @@
     .concat(midFloor.map((r) => [r[0], r[1], r[2], r[3], 'marble']))
     .concat(outdoor.map((a) => [a.r[0], a.r[1], a.r[2], a.r[3], a.kind === 'terrace' ? 'deck' : 'stonefloor']));
 
+  if (FRONT_LANDING) floors.push(FRONT_LANDING.concat('stonefloor'));
   // Ceilings at H, plus a roof projection over the front balcony.
   const ceilings = [
     [-1, 0, 30.375, 14.625],
@@ -138,8 +153,8 @@
   const fb = areaById['front-balcony'];
   if (fb && fb.r[3] > 47.5) ceilings.push([Math.max(8.875, fb.r[0]), 47, fb.r[2], fb.r[3] + 0.36]);
 
-  // Main stair down to the ground floor: 20 risers, three flights round the void.
-  const RISE = (H + SLAB) / 20, TREAD = 10 / 12;
+  // Main stair between the floors: 20 risers, three flights round the void.
+  const RISE = (HG + SLAB) / 20, TREAD = 10 / 12;
 
   // Rooms, for captions and the map.
   const ft = (v) => { const t = Math.round(Math.abs(v) * 24), f = Math.floor(t / 24), h = t - f * 24; return f + "'-" + Math.floor(h / 2) + (h % 2 ? '½' : '') + '"'; };
@@ -159,6 +174,7 @@
     { name: 'Family Lounge', size: "12'-10\" × 13'-3\"", r: [0.375, 14.625, 13.2, 27.875] },
     { name: 'Gallery', size: "beside the double height", r: [9.375, 14.625, 29.625, 27.875] }
   );
+  if (FRONT_LANDING) rooms.unshift({ name: 'Front Stair', size: 'ground floor, balcony and roof', r: [19.375, 47, 29.625, 52.75] });
 
   /* Where there is a floor to stand on: [x0, y0, x1, y1, height]. Height may be
      a function of (x, y) on the stairs. Walls, railings and furniture are
@@ -173,27 +189,31 @@
     [26.125, 18.125, 29.625, 23.96, f2],
     [26.125, 14.625, 29.625, 18.125, -16 * RISE],
     [23.62, 14.625, 26.125, 18.125, f3],
-    [9.375, 14.625, 23.62, 27.875, GF],       // placeholder room under the void
-    [23.62, 18.125, 26.125, 27.875, GF],
   ]);
+  if (!G) areas.push([9.375, 14.625, 23.62, 27.875, GF], [23.62, 18.125, 26.125, 27.875, GF]); // placeholder room under the void
 
   /* Solid pieces a person cannot walk through, worked out from the walls:
      [x0, y0, x1, y1, bottom, top]. Open doors and cased openings leave a gap. */
   const solids = [];
-  for (const w of walls) {
-    const [x0, y0, x1, y1] = w.r, [z0, z1] = w.z;
-    const lo = w.ax === 'x' ? x0 : y0, hi = w.ax === 'x' ? x1 : y1;
-    const piece = (a, b, za, zb) => { if (b - a > 1e-4 && zb - za > 1e-4) solids.push(w.ax === 'x' ? [a, y0, b, y1, za, zb] : [x0, a, x1, b, za, zb]); };
-    let cur = lo;
-    for (const o of w.ops.slice().sort((p, q) => p.a - q.a)) {
-      piece(cur, o.a, z0, z1);
-      const passable = o.type === 'open' || ((o.type === 'door' || o.type === 'gdoor') && o.isOpen);
-      if (!passable) piece(o.a, o.b, z0, o.head);
-      cur = o.b;
+  function addSolids(wallList, pillarList) {
+    for (const w of wallList) {
+      const [x0, y0, x1, y1] = w.r, [z0, z1] = w.z, base = w.base || 0;
+      const lo = w.ax === 'x' ? x0 : y0, hi = w.ax === 'x' ? x1 : y1;
+      const piece = (a, b, za, zb) => { if (b - a > 1e-4 && zb - za > 1e-4) solids.push(w.ax === 'x' ? [a, y0, b, y1, za, zb] : [x0, a, x1, b, za, zb]); };
+      // cut the wall at every opening edge; in each stretch, leave out the open (walkable) heights
+      const cuts = Array.from(new Set([lo, hi].concat(w.ops.flatMap((o) => [o.a, o.b])).filter((v) => v >= lo && v <= hi))).sort((p, q) => p - q);
+      for (let i = 0; i < cuts.length - 1; i++) {
+        const a = cuts[i], b = cuts[i + 1], mid = (a + b) / 2;
+        const holes = w.ops.filter((o) => o.a < mid && o.b > mid && (o.type === 'open' || ((o.type === 'door' || o.type === 'gdoor') && o.isOpen)))
+          .map((o) => [base + (o.sill || 0), base + o.head]).sort((p, q) => p[0] - q[0]);
+        let cur = z0;
+        for (const [h0, h1] of holes) { piece(a, b, cur, Math.max(cur, h0)); cur = Math.max(cur, h1); }
+        piece(a, b, cur, z1);
+      }
     }
-    piece(cur, hi, z0, z1);
+    for (const p of pillarList) solids.push([p.r[0], p.r[1], p.r[2], p.r[3], p.z[0], p.z[1]]);
   }
-  for (const p of pillars) solids.push([p.r[0], p.r[1], p.r[2], p.r[3], p.z[0], p.z[1]]);
+  addSolids(walls, pillars);
 
   // --- railings, worked out from the floor edges ------------------------------
   // Glass railing wherever first-floor floor meets the void or the stairwell,
@@ -218,8 +238,110 @@
   const v0 = voids[0];
   const voidCenter = v0 ? [(v0.r[0] + Math.min(v0.r[2], 24.5)) / 2, (v0.r[1] + v0.r[3]) / 2] : [17, 19.6];
 
+  // ===== ground floor ===========================================================
+  let ground = null;
+  if (G) {
+    const gv = (v) => (v === 'H' ? HG : v === 'PORCH' ? PORCH : v === 'TOP' ? HG + SLAB : v === 'ROOF' ? HG + SLAB + H + SLAB : +v);
+    const gzr = (z) => (z ? [GF + gv(z[0]), GF + gv(z[1])] : [GF, GF + HG]);
+    const gwalls = G.walls.map((w) => {
+      const z = gzr(w.z);
+      return { id: w.id, ax: w.ax, r: w.r.slice(), z, base: GF, grp: 'gmain', mat: w.mat || 'wall',
+        ops: (w.ops || []).map((o) => Object.assign({}, o, { head: Math.min(o.head, z[1] - GF) })) };
+    });
+    const gpillars = G.pillars.map((p) => ({ id: p.id, r: p.r.slice(), z: gzr(p.z), mat: p.mat || 'wall', grp: 'gmain' }));
+    const gareas = (G.areas || []).map((a) => ({ id: a.id, name: a.name || a.id, kind: a.kind, r: a.r.slice(), lvl: GF + (a.kind === 'porch' ? PORCH : 0) }));
+    const gwardrobes = (G.wardrobes || []).map((w) => ({ id: w.id, r: w.r.slice(), face: w.face || 'rear', h: Math.min(+w.h || HG, HG), mirror: !!w.mirror }));
+
+    // Solid base under the building, up to the floor finish.
+    const indoor = [[-1, 0, 30.375, 14.625], [-0.375, 14.625, 30.375, 28.625], [7.75, 28.625, 30.375, 39], [15.875, 39, 30.375, 47]];
+    const plinth = [[19, 47, 30.375, 53.5]].concat(gareas.filter((a) => a.kind !== 'porch').map((a) => a.r));
+    // Finish floors of the rooms: [x0, y0, x1, y1, material]
+    const gRoomFloors = [
+      [0.375, 14.625, 29.625, 27.875, 'marble'],      // living / dining hall
+      [-0.25, 4.75, 12.885, 14.25, 'woodfloor'],      // children's bedroom
+      [-0.25, 0.375, 4.75, 4.375, 'marble'],          // pooja
+      [13.26, 0.75, 19.25, 4.375, 'marble'],          // store
+      [15.26, 4.375, 19.25, 6.38, 'marble'],
+      [13.26, 9.5, 19.25, 14.25, 'bathfloor'],        // common toilet
+      [15.26, 6.75, 19.25, 9.5, 'bathfloor'],         // w.c.
+      [19.625, 0.75, 29.625, 14.25, 'woodfloor'],     // guest bedroom
+      [8.5, 28.25, 15.875, 38.25, 'marble'],          // kitchen
+      [16.25, 28.25, 19.75, 33.25, 'marble'],         // passage
+      [20.125, 28.25, 29.625, 33.25, 'bathfloor'],    // toilet (the duct was taken out)
+      [16.25, 33.25, 19.75, 33.625, 'woodfloor'],     // passage opens into the master bedroom
+      [16.25, 33.625, 29.25, 46.25, 'woodfloor'],     // master bedroom
+    ];
+    // Steps between the porch and the raised floor: [x0, y0, x1, y1, top above the ground floor]
+    const steps = [
+      [0.375, 33.13, 7.75, 33.965, -0.5], [0.375, 33.965, 7.75, 34.8, -1.0],
+      [12, 49.14, 15.875, 49.97, -0.5], [12, 49.97, 15.875, 50.8, -1.0],
+    ];
+    const sq = (w, d) => Math.round(w * d) + ' sq ft';
+    const grooms = [
+      { name: 'Living / Dining Hall', size: "25'-4½\" × 13'-3\" · " + sq(25.375, 13.25), r: [0.375, 14.625, 29.625, 27.875] },
+      { name: "Children's Bedroom", size: "13'-1½\" × 9'-6\" · " + sq(13.125, 9.5), r: [-0.25, 4.75, 12.885, 14.25] },
+      { name: 'Pooja', size: "5'-0\" × 4'-0\" · 20 sq ft", r: [-0.25, 0.375, 4.75, 4.375] },
+      { name: 'Store', size: "6'-0\" × 3'-7½\"", r: [13.26, 0.75, 19.25, 6.38] },
+      { name: 'Common Toilet', size: "6'-0\" × 4'-9\" + W.C. 4'-0\" × 2'-9\"", r: [13.26, 6.75, 19.25, 14.25] },
+      { name: 'Guest Bedroom', size: "10'-0\" × 11'-6\" · " + sq(10, 11.5), r: [19.625, 0.75, 29.625, 14.25] },
+      { name: 'Kitchen', size: "7'-4½\" × 10'-0\" · " + sq(7.375, 10), r: [8.5, 28.25, 15.875, 38.25] },
+      { name: 'Passage', size: "3'-6\" wide", r: [16.25, 28.25, 19.75, 33.25] },
+      { name: 'Toilet', size: "9'-6\" × 5'-0\" · " + sq(9.5, 5), r: [20.125, 28.25, 29.625, 33.25] },
+      { name: 'Master Bedroom', size: "13'-0\" × 10'-7½\" · " + sq(13, 10.625), r: [16.25, 33.625, 29.25, 46.25] },
+    ];
+    // the car porch is drawn as a few rectangles: its caption gives the whole porch, as on the drawing
+    for (const a of gareas) grooms.push({ name: a.name, size: a.kind === 'porch' ? "11'-7½\" × 14'-6\" · 169 sq ft" : ft(a.r[2] - a.r[0]) + ' × ' + ft(a.r[3] - a.r[1]), r: a.r, area: true });
+    grooms.push({ name: 'Front Stair', size: 'to the first floor and the roof', r: [19, 47, 29.625, 52.75] });
+    grooms.push({ name: 'Road', size: "in front of the house (west) · plot 30' × 54'-6\"", r: [-40, 54.5, 70, 78] });
+
+    // Where you can stand on the ground floor.
+    const ramp = (y0, y1) => (x, y) => GF + PORCH * clamp01((y - y0) / (y1 - y0));
+    areas.push(
+      [-0.25, 0.375, 29.625, 14.625, GF],             // rear block
+      [0.375, 14.25, 23.62, 28.625, GF],              // hall, up to the foot of the main stair
+      [23.62, 18.125, 26.125, 28.25, GF],
+      [7.75, 27.875, 29.625, 39, GF],                 // kitchen, passage, toilet
+      [15.875, 39, 29.625, 46.25, GF],                // master bedroom
+      [0.375, 33.13, 7.75, 34.8, ramp(33.13, 34.8)],  // lobby steps
+      [12, 49.14, 15.875, 50.8, ramp(49.14, 50.8)]    // walkway steps
+    );
+    for (const a of gareas) areas.push([a.r[0], a.r[1], a.r[2], a.r[3], a.lvl]);
+    const ROAD = GF + PORCH - 0.25;                                // road surface, a little below the porch
+    areas.push([-40, 54.5, 70, 78, ROAD]);
+    for (const [tx, ty, ts] of [[-12, 58, 0.8], [40, 58.5, 0.9]]) solids.push([tx - 0.75 * ts, ty - 0.75 * ts, tx + 0.75 * ts, ty + 0.75 * ts, ROAD - 1, ROAD + 9]);
+    addSolids(gwalls, gpillars);
+    /* Front stair: two runs, each a flight heading south, three winders and a
+       flight heading back north. The first run reaches the landing beside the
+       front balcony, the second the roof. */
+    const TOP = H + SLAB, FX0 = 22.13, FX1 = 22.13 + 6 * (9.5 / 12), RF = -GF / 16, RT = TOP / 16;
+    const frontRun = (base, R) => [
+      [FX0, 47, FX1, 49.76, (x) => base + clamp01((x - FX0) / (FX1 - FX0)) * 6 * R],
+      [FX1, 47, 29.625, 52.75, (x, y) => base + (6 + 3 * clamp01((y - 47) / 5.75)) * R],
+      [FX0, 50.01, FX1, 52.75, (x) => base + (9 + 6 * clamp01((FX1 - x) / (FX1 - FX0))) * R],
+    ];
+    areas.push([19, 47, FX0, 50, GF]);                           // through the stair door and inside it
+    areas.push(...frontRun(GF, RF), ...frontRun(0, RT));
+    areas.push([19.375, 47, FX0, 52.75, TOP]);                   // landing on the roof
+    const roof = ceilings.slice(0, 4);
+    for (const c of roof) areas.push([c[0], c[1], c[2], c[3], TOP]);
+    solids.push([FX0, 49.76, FX1, 50.01, GF, TOP]);              // the wall between the flights
+    // a 3 ft parapet round the roof, open only where the stair landing joins it
+    const parapet = boundary(roof, (x, y, nx, ny) => !(ny === 1 && Math.abs(y - 47) < 0.01 && x > 19.375 && x < FX0));
+    for (const s of parapet) {
+      const t = 0.375, a = s.c - (s.n > 0 ? t : 0), b = s.c + (s.n < 0 ? t : 0);
+      solids.push(s.dir === 'y' ? [a, s.a, b, s.b, TOP, TOP + 3] : [s.a, a, s.b, b, TOP, TOP + 3]);
+    }
+    A.frontStair = { X0: FX0, X1: FX1, RF, RT, TOP, parapet };
+
+    ground = {
+      H: HG, PORCH, walls: gwalls, pillars: gpillars, areaList: gareas, wardrobes: gwardrobes, plinth, indoor,
+      roomFloors: gRoomFloors, steps, rooms: grooms,
+      floors: gRoomFloors.map((f) => [f[0], f[1], f[2], f[3], f[4], GF]).concat(gareas.map((a) => [a.r[0], a.r[1], a.r[2], a.r[3], 'stonefloor', a.lvl])),
+    };
+  }
+
   A.plan = {
-    H, SLAB, GF, DOOR, RISE, TREAD, walls, pillars, slabs, floors, roomFloors, ceilings, rooms, areas, solids,
-    areaList, areaById, voids, midFloor, wardrobes, ZONE, STAIRWELL, rails: { glass, jaali }, voidCenter,
+    H, SLAB, GF, HG, PORCH, DOOR, RISE, TREAD, walls, pillars, slabs, floors, roomFloors, ceilings, rooms, areas, solids,
+    areaList, areaById, voids, midFloor, wardrobes, ZONE, STAIRWELL, rails: { glass, jaali }, voidCenter, ground,
   };
 })();

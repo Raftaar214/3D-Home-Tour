@@ -61,13 +61,19 @@
     aside { border-left: 0; border-top: 1px solid var(--line); }
     header .sub { display: none; }
   }
+  nav.tabs { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  nav.tabs a { padding: 7px 12px; text-decoration: none; color: inherit; font-size: 13px; white-space: nowrap; }
+  nav.tabs a + a { border-left: 1px solid var(--line); }
+  nav.tabs a.on { background: var(--sel); color: #fff; }
+  body:not(.ground) #legend .gf, body.ground #legend .ff { display: none; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1>Floor Plan Editor</h1>
-    <span class="sub">First floor · click a wall, window, door, pillar or open area to change it</span>
+    <nav class="tabs"><a data-floortab="ground" href="editor.html?floor=ground">Ground floor</a><a data-floortab="first" href="editor.html">First floor</a></nav>
+    <span class="sub"><span class="floorname">First floor</span> · click a wall, window, door, pillar or open area to change it</span>
     <span id="savepill" class="pill busy">Checking…</span>
     <button id="undo" type="button" title="Ctrl+Z">Undo</button>
     <button id="redo" type="button" title="Ctrl+Y">Redo</button>
@@ -84,8 +90,10 @@
       <span><i style="background:var(--door)"></i>Door</span>
       <span><i style="background:var(--pillar)"></i>Pillar</span>
       <span><i style="background:#c9a276"></i>Wardrobe</span>
-      <span><i style="background:#dde3cc;outline:1px dashed #8f9872"></i>Terrace / balcony</span>
-      <span><i style="background:#d9cfbd;outline:1px dashed #9a8a72"></i>Double height</span>
+      <span class="ff"><i style="background:#dde3cc;outline:1px dashed #8f9872"></i>Terrace / balcony</span>
+      <span class="ff"><i style="background:#d9cfbd;outline:1px dashed #9a8a72"></i>Double height</span>
+      <span class="gf"><i style="background:#e6ddd0;outline:1px dashed #8f9872"></i>Porch / lobby / walkway</span>
+      <span class="gf"><i style="background:#dbe6e1;outline:1px dashed #8f9872"></i>Open court</span>
     </div>
     <div id="hud"><button id="zin" type="button" aria-label="Zoom in">+</button><button id="zout" type="button" aria-label="Zoom out">−</button><span class="chip" id="coord">&nbsp;</span></div>
   </div>
@@ -113,6 +121,7 @@
       <select id="g-th"><option value="0.375" selected>4½ inches</option><option value="0.75">9 inches</option></select></div>
     <label class="check"><input id="g-img" type="checkbox"> Show the original drawing <input id="g-op" type="range" min="0.1" max="1" step="0.05" value="0.45" aria-label="Drawing opacity"></label>
     <label class="check"><input id="g-rooms" type="checkbox" checked> Show room names</label>
+    <label class="check"><input id="g-other" type="checkbox"> Show the other floor's walls (pale blue)</label>
 
     <h2>Save and use</h2>
     <p id="status"></p>
@@ -121,7 +130,7 @@
       <button id="download" type="button">Download plan file</button>
       <button id="reset" type="button" class="danger">Reset to original</button>
     </div>
-    <p class="hint">Opened from <b>http://localhost:8765/editor.html</b>, every change is written straight into the plan file <b>js/plan-data.js</b>, and the 3D walkthrough uses it. Opened any other way, changes stay in this browser only; download the plan file to keep them.</p>
+    <p class="hint">Opened from <b class="editorurl">http://localhost:8765/editor.html</b>, every change is written straight into the plan file <b class="planfile">js/plan-data.js</b>, and the 3D walkthrough uses it. Each floor has its own plan file; switch floors with the tabs at the top. Opened any other way, changes stay in this browser only; download the plan file to keep them.</p>
 
     <h2>How to</h2>
     <p class="hint">Drag an item to move it. Drag the round handles to resize. Terraces, balconies and the double-height opening are resized by their handles or by typing sizes; their floor and railings follow. Type exact sizes on the right as 12'-6", 12.5 or 150". Delete removes the selected item. Drag empty paper to pan; scroll to zoom. Arrow keys nudge by one snap step.</p>
@@ -130,7 +139,9 @@
 </div>
 
 <script>document.write('<script src="js/plan-data.js?t=' + Date.now() + '"><\/script>');</script>
-<script src="js/plan.js?v=31"></script>
-<script src="js/editor.js?v=31"></script>
+<script>document.write('<script src="js/plan-data-ground.js?t=' + Date.now() + '"><\/script>');</script>
+<script>window.PLAN_STANDALONE = true; /* each floor is read from its file; the editor then applies its own saved copy for the floor being edited */</script>
+<script src="js/plan.js?v=42"></script>
+<script src="js/editor.js?v=42"></script>
 </body>
 </html>

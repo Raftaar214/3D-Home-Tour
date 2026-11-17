@@ -44,15 +44,32 @@
     A.buildLighting(scene, renderer);
 
     // Mirrors: photograph each room once from its middle and use that as the reflection.
+    /* What is shown: 'none' = everything, 'first' = roof off, 'ground' = the first
+       floor lifted away as well, so the ground floor can be seen from above. */
+    const cutPlane = new T.Plane(new T.Vector3(0, -1, 0), -A.plan.SLAB - 0.06);
+    A.cut = 'none';
+    A.setCut = (mode) => {
+      const g = A.groups, ground = mode === 'ground' && !!A.plan.ground;
+      A.cut = ground ? 'ground' : mode === 'first' ? 'first' : 'none';
+      g.ceil.visible = A.cut === 'none';
+      g.main.visible = !ground;
+      if (g.furn) g.furn.visible = !ground;
+      renderer.clippingPlanes = ground ? [cutPlane] : [];
+      A.refreshShadows();
+    };
     function mirrorShots() {
-      const shots = [['mirror', 24.6, 41.2], ['mirror2', 25.6, 34.6], ['mirror3', 23.2, 12.4]];
+      const shots = [['mirror', 24.6, 41.2, 0], ['mirror2', 25.6, 34.6, 0], ['mirror3', 23.2, 12.4, 0]];
+      if (A.plan.ground) shots.push(['mirror4', 16.4, 12.0, A.plan.GF], ['mirror5', 23.0, 31.2, A.plan.GF]);
       const hidden = [];
       scene.traverse((o) => { if (o.isMesh && shots.some((s) => A.M[s[0]] === o.material)) hidden.push(o); });
       hidden.forEach((o) => (o.visible = false));
-      for (const [key, x, y] of shots) {
-        const rt = new T.WebGLCubeRenderTarget(256, { generateMipmaps: true, minFilter: T.LinearMipmapLinearFilter });
+      const saved = renderer.clippingPlanes;
+      renderer.clippingPlanes = [];
+      for (const [key, x, y, lvl] of shots) {
+        if (shotRT[key]) shotRT[key].dispose();
+        const rt = (shotRT[key] = new T.WebGLCubeRenderTarget(256, { generateMipmaps: true, minFilter: T.LinearMipmapLinearFilter }));
         const cc = new T.CubeCamera(0.2, 400, rt);
-        cc.position.set(x, 4.6, y);
+        cc.position.set(x, lvl + 4.6, y);
         A.updateLights(cc.position, false);
         scene.add(cc);
         cc.update(renderer, scene);
@@ -61,19 +78,40 @@
         A.M[key].needsUpdate = true;
       }
       hidden.forEach((o) => (o.visible = true));
+      renderer.clippingPlanes = saved;
     }
+    const shotRT = {};
     if (debug !== 'plan') { try { mirrorShots(); } catch (err) { console.warn('mirror reflections skipped', err); } }
     // A style changes the furniture itself, not only its colours: rebuild it, then refresh mirrors and shadows.
     A.onStyle = () => {
       if (debug === 'plan') return;
-      const old = A.groups.furn;
+      const old = A.groups.furnAll;
       if (old) { scene.remove(old); old.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
       A.buildFurniture(scene);
+      A.setCut(A.cut);
+      nearFloor = null;
       try { mirrorShots(); } catch (err) { /* keep the old reflections */ }
       A.refreshShadows();
     };
 
-    let render = () => renderer.render(scene, camera);
+    // after the time of day has been changed, the mirrors are photographed again
+    A.onTodSettled = () => { if (debug !== 'plan') { try { mirrorShots(); } catch (err) { /* keep the old reflections */ } } };
+    if (params.get('tod') !== null && A.setTod) A.setTod(Number(params.get('tod')), true);
+
+    /* The floor you are on is drawn first, so whatever the other floor would have
+       drawn behind it is skipped early: two floors then cost little more than one. */
+    let nearFloor = null;
+    function orderFloors() {
+      if (!A.plan.ground || debug === 'plan') return;
+      const f = camera.position.y < A.plan.GF / 2 ? 'ground' : 'first';
+      if (f === nearFloor) return;
+      nearFloor = f;
+      const set = (grp, v) => { if (grp) grp.traverse((o) => { if (o.isMesh && o.renderOrder < 5) o.renderOrder = v; }); };
+      set(A.groups.main, f === 'first' ? 0 : 1); set(A.groups.furn, f === 'first' ? 0 : 1);
+      set(A.groups.gmain, f === 'ground' ? 0 : 1); set(A.groups.gfurn, f === 'ground' ? 0 : 1);
+    }
+
+    let render = () => { orderFloors(); renderer.render(scene, camera); };
     let tick = null;
 
     if (debug === 'plan') {
@@ -131,11 +169,13 @@
       const raw = (now - last) / 1000, dt = Math.min(0.1, raw);
       last = now;
       if (tick) tick(dt);
-      if (A.updateLights && !debug) A.updateLights(camera.position, camera.position.y > 30);
+      const changing = A.todStep && !debug ? A.todStep(dt) : false;
+      if (A.updateLights && !debug) A.updateLights(camera.position, A.viewFloor || false);
       render();
       // Keep the motion smooth: if frames are slow, draw at a lower resolution; if
-      // there is headroom, sharpen up again.
-      if (raw < 0.5 && ++warm > 40) {
+      // there is headroom, sharpen up again. (Not judged while the sun is being moved:
+      // those frames redraw the shadows and are slower for a moment.)
+      if (raw < 0.5 && ++warm > 40 && !changing) {
         acc += raw; count++;
         if (count >= 24) {
           const avg = acc / count;
@@ -150,8 +190,8 @@
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
-    A.renderOnce = () => { if (tick) tick(0); if (A.updateLights && !debug) A.updateLights(camera.position, camera.position.y > 30); render(); };
-    A.step = (dt) => { if (tick) tick(dt); if (A.updateLights && !debug) A.updateLights(camera.position, camera.position.y > 30); render(); }; // advance by hand, for checking
+    A.renderOnce = () => { if (tick) tick(0); if (A.updateLights && !debug) A.updateLights(camera.position, A.viewFloor || false); render(); };
+    A.step = (dt) => { if (tick) tick(dt); if (A.todStep && !debug) A.todStep(dt); if (A.updateLights && !debug) A.updateLights(camera.position, A.viewFloor || false); render(); }; // advance by hand, for checking
 
     const ld = document.getElementById('loading');
     ld.classList.add('hide');

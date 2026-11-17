@@ -1,6 +1,7 @@
 # Client drawings: kept off GitHub while the repository is public
 *.pdf
 walkthrough/debug/plan.png
+walkthrough/debug/plan-ground.png
 
 # Python's compiled cache, rebuilt automatically
 __pycache__/

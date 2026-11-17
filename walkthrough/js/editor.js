@@ -1,15 +1,22 @@
 /* Floor plan editor: every wall, window, door and pillar can be selected, moved,
-   resized, edited by typing sizes, or deleted. Changes are saved in this browser
-   under the key the 3D walkthrough reads, and can be downloaded as plan-data.js. */
+   resized, edited by typing sizes, or deleted. One floor is edited at a time
+   (editor.html = first floor, editor.html?floor=ground = ground floor). Changes are
+   saved in this browser under the key the 3D walkthrough reads, and can be
+   downloaded as that floor's plan file. */
 (function () {
-  const A = window.APP, BASE = window.PLAN_DATA, KEY = A.PLAN_KEY;
+  const A = window.APP;
+  const GROUND = new URLSearchParams(location.search).get('floor') === 'ground' && !!window.PLAN_DATA_GROUND;
+  const BASE = GROUND ? window.PLAN_DATA_GROUND : window.PLAN_DATA, KEY = GROUND ? A.PLAN_KEY_G : A.PLAN_KEY;
+  const FILE = GROUND ? 'plan-data-ground.js' : 'plan-data.js', VAR = GROUND ? 'PLAN_DATA_GROUND' : 'PLAN_DATA', QS = GROUND ? '?floor=ground' : '';
+  const PV = GROUND ? A.plan.ground : A.plan;   // this floor's fixed parts (room floors, room names)
+  const AREA_NAMES = { void: 'Double-height opening', terrace: 'Terrace', balcony: 'Balcony', porch: 'Car porch', platform: 'Raised floor (lobby / walkway)', court: 'Open court' };
   const $ = (id) => document.getElementById(id);
   const svg = $('svg'), world = $('world');
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const r4 = (v) => Math.round(v * 10000) / 10000;
 
   // --- the plan being edited ----------------------------------------------------
-  const pick = (d) => ({ version: BASE.version, H: d.H, walls: clone(d.walls), pillars: clone(d.pillars), areas: clone(d.areas || A.DEFAULT_AREAS), wardrobes: clone(d.wardrobes || A.DEFAULT_WARDROBES) });
+  const pick = (d) => ({ version: BASE.version, H: d.H, walls: clone(d.walls), pillars: clone(d.pillars), areas: clone(d.areas || (GROUND ? [] : A.DEFAULT_AREAS)), wardrobes: clone(d.wardrobes || (GROUND ? [] : A.DEFAULT_WARDROBES)) });
   let plan = pick(BASE);
   try {
     const s = localStorage.getItem(KEY);
@@ -80,7 +87,7 @@
     diskState = 'busy';
     clearTimeout(diskTimer);
     diskTimer = setTimeout(() => {
-      post('api/plan', JSON.stringify(plan)).then((j) => {
+      post('api/plan' + QS, JSON.stringify(plan)).then((j) => {
         diskState = j && j.ok ? 'ok' : 'fail';
         if (diskState === 'ok') { try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ } }
         showStatus(true);
@@ -92,7 +99,7 @@
     const pill = $('savepill');
     if (pill) {
       const st = disk ? (diskState === 'fail' ? ['bad', 'NOT saved: could not write the plan file'] : diskState === 'busy' ? ['busy', 'Saving…'] : ['good', diskState === 'ok' ? 'Saved to plan file at ' + new Date().toTimeString().slice(0, 5) : 'Connected to plan file'])
-        : checked ? ['bad', 'NOT saving to the plan file. Open http://localhost:8765/editor.html'] : ['busy', 'Checking…'];
+        : checked ? ['bad', 'NOT saving to the plan file. Open http://localhost:8765/editor.html' + QS] : ['busy', 'Checking…'];
       pill.className = 'pill ' + st[0];
       pill.textContent = st[1];
     }
@@ -103,7 +110,7 @@
       return;
     }
     $('status').innerHTML = !ok ? '<b>Could not save in this browser.</b> Use Download plan file to keep your changes.'
-      : same ? '<b>Matches the original plan.</b>' : '<b>Edited.</b> Saved in this browser only. Open the editor from http://localhost:8765/editor.html to save into the plan file.';
+      : same ? '<b>Matches the original plan.</b>' : '<b>Edited.</b> Saved in this browser only. Open the editor from http://localhost:8765/editor.html' + QS + ' to save into the plan file.';
     if (same && ok) { try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ } }
   }
   function save() {
@@ -116,19 +123,25 @@
   function changed() { save(); render(); panel(); }
 
   // --- drawing the plan --------------------------------------------------------------------
-  const K = 11.307; // points per foot on the original sheet
+  // the original drawing laid under the plan: points per foot, plot corner and sheet size, per floor
+  const SHEET = GROUND ? { img: 'debug/plan-ground.png', k: 48.61, x: 675.03, y: 173.2, w: 2382.83, h: 3368.83 } : { img: 'debug/plan.png', k: 11.307, x: 131.6, y: 79.35, w: 595, h: 842 };
   function px() { return view.w / svg.clientWidth; } // feet per screen pixel
   function render() {
     svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
-    const u = px(), P = A.plan, out = [];
+    const u = px(), P = PV, out = [], TREAD = A.plan.TREAD;
     const rect = (r, attrs) => `<rect x="${r[0]}" y="${r[1]}" width="${Math.max(0, r[2] - r[0])}" height="${Math.max(0, r[3] - r[1])}" ${attrs}/>`;
     // context: floors, void, stair, room names
     for (const f of P.roomFloors) out.push(rect(f, `fill="${f[4] === 'woodfloor' ? '#eadfcb' : f[4] === 'bathfloor' ? '#e3e6e3' : '#efe9dd'}"`));
-    out.push(rect([-0.375, 14.625, 29.625, 27.875], 'fill="#efe9dd"')); // lounge and gallery floor
+    if (!GROUND) out.push(rect([-0.375, 14.625, 29.625, 27.875], 'fill="#efe9dd"')); // lounge and gallery floor
+    if ($('g-other') && $('g-other').checked) { // the other floor's walls, faintly, to line things up
+      const other = GROUND ? A.plan.walls : (A.plan.ground ? A.plan.ground.walls : []);
+      for (const w of other) out.push(rect(w.r, 'fill="#b9c6d6" opacity="0.55" style="pointer-events:none"'));
+    }
     const thin = `stroke="#b3a793" stroke-width="${u}" fill="none" style="pointer-events:none"`;
     // open areas, live: terraces and balconies first, then the double-height opening
     const dash = `stroke-width="${1.3 * u}" stroke-dasharray="${5 * u} ${3 * u}" style="cursor:pointer"`;
-    plan.areas.forEach((a, i) => { if (a.kind !== 'void') out.push(rect(a.r, `data-kind="area" data-i="${i}" fill="${a.kind === 'terrace' ? '#dde3cc' : '#e4e2d0'}" stroke="#8f9872" ${dash}`)); });
+    const areaFill = { terrace: '#dde3cc', balcony: '#e4e2d0', porch: '#e6ddd0', platform: '#e9e4d6', court: '#dbe6e1' };
+    plan.areas.forEach((a, i) => { if (a.kind !== 'void') out.push(rect(a.r, `data-kind="area" data-i="${i}" fill="${areaFill[a.kind] || '#e4e2d0'}" stroke="#8f9872" ${dash}`)); });
     plan.areas.forEach((a, i) => {
       if (a.kind !== 'void') return;
       out.push(rect(a.r, `data-kind="area" data-i="${i}" fill="#d9cfbd" stroke="#9a8a72" ${dash}`));
@@ -137,11 +150,16 @@
     // the main stair is fixed
     out.push(rect([20.29, 24.375, 29.625, 27.875], 'fill="#e6dfd2" style="pointer-events:none"'), rect([26.125, 14.625, 29.625, 24.375], 'fill="#e6dfd2" style="pointer-events:none"'));
     let st = '';
-    for (let i = 0; i <= 7; i++) st += `M${20.29 + i * P.TREAD} 24.375 V27.875 `;
-    for (let i = 0; i <= 7; i++) st += `M26.125 ${23.96 - i * P.TREAD} H29.625 `;
-    for (let i = 0; i <= 3; i++) st += `M${26.125 - i * P.TREAD} 14.625 V18.125 `;
+    for (let i = 0; i <= 7; i++) st += `M${20.29 + i * TREAD} 24.375 V27.875 `;
+    for (let i = 0; i <= 7; i++) st += `M26.125 ${23.96 - i * TREAD} H29.625 `;
+    for (let i = 0; i <= 3; i++) st += `M${26.125 - i * TREAD} 14.625 V18.125 `;
+    if (GROUND) { // the front stair, as drawn (fixed)
+      out.push(rect([22.13, 47, 29.625, 52.75], 'fill="#e6dfd2" style="pointer-events:none"'));
+      for (let i = 0; i <= 6; i++) st += `M${22.13 + i * 0.7917} 47 V52.75 `;
+      st += 'M22.13 49.88 H26.88 ';
+    }
     out.push(`<path d="${st}" ${thin}/>`);
-    if ($('g-img').checked) out.push(`<image href="debug/plan.png" x="${-131.6 / K}" y="${-79.35 / K}" width="${595 / K}" height="${842 / K}" opacity="${$('g-op').value}" preserveAspectRatio="none" style="pointer-events:none"/>`);
+    if ($('g-img').checked) out.push(`<image href="${SHEET.img}" x="${-SHEET.x / SHEET.k}" y="${-SHEET.y / SHEET.k}" width="${SHEET.w / SHEET.k}" height="${SHEET.h / SHEET.k}" opacity="${$('g-op').value}" preserveAspectRatio="none" style="pointer-events:none"/>`);
     if ($('g-rooms').checked) {
       const seen = {};
       const label = (name, x, y) => out.push(`<text x="${x}" y="${y}" font-size="${11 * u}" text-anchor="middle" dominant-baseline="middle" fill="#8a7f70" style="pointer-events:none">${name}</text>`);
@@ -150,7 +168,7 @@
         seen[r.name] = 1;
         label(r.name, (r.r[0] + r.r[2]) / 2, (r.r[1] + r.r[3]) / 2);
       }
-      label('Gallery', 14.8, 26.1);
+      if (!GROUND) label('Gallery', 14.8, 26.1);
       for (const a of plan.areas) {
         if (seen[a.name]) continue;
         seen[a.name] = 1;
@@ -241,7 +259,7 @@
       field('len', 'Length', hi(w) - lo(w));
       field('pos', x ? 'Position (Y, from rear)' : 'Position (X, from north)', w.r[a0]);
       field('th', 'Thickness', w.r[across(w)[1]] - w.r[a0]);
-      if (isSpecial(w)) rows.push({ note: 'This wall also runs below the floor (to the ground). Its height is kept as it is.' });
+      if (isSpecial(w)) rows.push({ note: 'This wall runs through more than one floor (below the floor, or up to the roof). Its height is kept as it is.' });
       else {
         field('kind', 'Height', isLow(w) ? 'low' : 'full', 'select', { full: 'Floor to ceiling', low: 'Low wall' });
         if (isLow(w)) field('top', 'Low wall height', w.z[1]);
@@ -276,13 +294,13 @@
       rows.push({ note: 'The heavy line on the plan is the door side.' });
     } else if (sel.kind === 'area') {
       const a = it, isVoid = a.kind === 'void';
-      title = isVoid ? 'Double-height opening' : a.kind === 'terrace' ? 'Terrace' : 'Balcony';
+      title = AREA_NAMES[a.kind] || 'Open area';
       field('name', 'Name', a.name, 'text');
       field('x', 'X (north edge)', a.r[0]);
       field('y', 'Y (rear edge)', a.r[1]);
       field('pw', 'Width (north to south)', a.r[2] - a.r[0]);
       field('pd', 'Depth (rear to front)', a.r[3] - a.r[1]);
-      rows.push({ note: isVoid ? 'The floor fills in wherever this opening is made smaller, and glass railing follows its edges. The main stair stays where it is.' : 'The floor and the railing on its open sides follow this outline. Furniture on it does not move.' });
+      rows.push({ note: isVoid ? 'The floor fills in wherever this opening is made smaller, and glass railing follows its edges. The main stair stays where it is.' : GROUND ? 'The paved floor follows this outline. A car porch sits 1\'-6" below the house floor; the steps and furniture do not move with it.' : 'The floor and the railing on its open sides follow this outline. Furniture on it does not move.' });
     } else {
       const p = it;
       title = 'Pillar';
@@ -537,7 +555,17 @@
   function doRedo() { if (!redo.length) return; undo.push(snapshot()); restore(redo.pop()); changed(); }
   $('undo').addEventListener('click', doUndo);
   $('redo').addEventListener('click', doRedo);
-  for (const id of ['g-img', 'g-op', 'g-rooms']) $(id).addEventListener('input', render);
+  for (const id of ['g-img', 'g-op', 'g-rooms', 'g-other']) if ($(id)) $(id).addEventListener('input', render);
+  // floor tabs and the texts that name the floor
+  document.querySelectorAll('[data-floortab]').forEach((el) => {
+    const g = el.dataset.floortab === 'ground';
+    el.classList.toggle('on', g === GROUND);
+    if (g && !window.PLAN_DATA_GROUND) el.style.display = 'none';
+  });
+  document.querySelectorAll('.floorname').forEach((el) => { el.textContent = GROUND ? 'Ground floor' : 'First floor'; });
+  document.querySelectorAll('.planfile').forEach((el) => { el.textContent = 'js/' + FILE; });
+  document.querySelectorAll('.editorurl').forEach((el) => { el.textContent = 'http://localhost:8765/editor.html' + QS; });
+  document.body.classList.toggle('ground', GROUND);
   $('g-h').addEventListener('change', () => {
     const v = parse($('g-h').value);
     if (!isFinite(v) || v < 8 || v > 20) { $('g-h').classList.add('bad'); return; }
@@ -547,7 +575,7 @@
   $('reset').addEventListener('click', () => {
     if (!window.confirm('Discard every change made in this editor and go back to the original plan?')) return;
     if (disk) {
-      post('api/reset').then(() => { try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ } location.reload(); });
+      post('api/reset' + QS).then(() => { try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ } location.reload(); });
       return;
     }
     checkpoint(); plan = pick(BASE); sel = null; $('g-h').value = fmt(plan.H); changed();
@@ -556,8 +584,8 @@
     tidy();
     const lines = [
       '/* Floor plan saved from the plan editor on ' + new Date().toISOString().slice(0, 10) + '.',
-      '   Replace walkthrough/js/plan-data.js with this file. Units are feet; see the editor for the axes. */',
-      'window.PLAN_DATA = {', '  version: ' + BASE.version + ',', '  H: ' + plan.H + ',', '  SLAB: ' + BASE.SLAB + ',', '  DOOR: ' + BASE.DOOR + ',',
+      '   Replace walkthrough/js/' + FILE + ' with this file. Units are feet; see the editor for the axes. */',
+      'window.' + VAR + ' = {', '  version: ' + BASE.version + ',', '  H: ' + plan.H + ',', '  SLAB: ' + BASE.SLAB + ',', '  DOOR: ' + BASE.DOOR + ',',
       '  walls: [', plan.walls.map((w) => '    ' + JSON.stringify(w)).join(',\n'), '  ],',
       '  pillars: [', plan.pillars.map((p) => '    ' + JSON.stringify(p)).join(',\n'), '  ],',
       '  areas: [', plan.areas.map((p) => '    ' + JSON.stringify(p)).join(',\n'), '  ],',
@@ -565,7 +593,7 @@
     ];
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/javascript' }));
-    a.download = 'plan-data.js';
+    a.download = FILE;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -596,7 +624,7 @@
   window.addEventListener('resize', fit);
 
   // exposed for checking
-  A.editor = { get plan() { return plan; }, get sel() { return sel; }, select: (s) => { sel = s; render(); panel(); }, fmt, parse };
+  A.editor = { floor: GROUND ? 'ground' : 'first', get plan() { return plan; }, get sel() { return sel; }, select: (s) => { sel = s; render(); panel(); }, fmt, parse };
 
   $('g-h').value = fmt(plan.H);
   fit();

@@ -1,8 +1,9 @@
 """Local server for the walkthrough and the plan editor.
 
 Serves this folder on http://localhost:<port> and lets the plan editor write its
-changes straight into js/plan-data.js, so edits are kept on disk instead of only
-inside a browser. Listens on this computer only.
+changes straight into the plan files (js/plan-data.js for the first floor,
+js/plan-data-ground.js for the ground floor), so edits are kept on disk instead
+of only inside a browser. Listens on this computer only.
 
 Run:  python serve.py 8765
 """
@@ -13,8 +14,26 @@ import shutil
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-PLAN = os.path.join(ROOT, 'js', 'plan-data.js')
-ORIG = os.path.join(ROOT, 'js', 'plan-data.original.js')
+# one plan file per floor: (file the editor writes, copy kept from before the first edit, variable name)
+FLOORS = {
+    'first': (os.path.join(ROOT, 'js', 'plan-data.js'), os.path.join(ROOT, 'js', 'plan-data.original.js'), 'PLAN_DATA'),
+    'ground': (os.path.join(ROOT, 'js', 'plan-data-ground.js'), os.path.join(ROOT, 'js', 'plan-data-ground.original.js'), 'PLAN_DATA_GROUND'),
+}
+PLAN, ORIG = FLOORS['first'][0], FLOORS['first'][1]
+
+HEADER_GROUND = """/* The editable GROUND FLOOR plan: walls, their windows and doors, pillars, the
+   outdoor areas (car porch, entry lobby, walkway, open court) and wardrobes.
+   Written by the plan editor (Ground floor tab).
+
+   Units are feet, on the same axes as the first floor: X runs to the right of the
+   sheet (south), Y runs down the sheet (west, toward the road). X = 0 is the
+   front-left corner of the plot, Y = 0 is the outer face of the rear wall.
+   r  = [x0, y0, x1, y1] footprint.   ax = direction the wall runs ("x" or "y").
+   z  = [bottom, top] measured from the ground floor finish; left out means floor
+        to ceiling. "H" = ceiling, "PORCH" = car porch level (1'-6" below the floor),
+        "ROOF" = top of the first floor's roof slab.
+   ops = openings; a/b are positions along the wall. "leaves": 2 = double door. */
+"""
 
 HEADER = """/* The editable floor plan: walls, their windows and doors, pillars, and the open
    areas (terrace, balconies, double-height opening). Written by the plan editor.
@@ -54,11 +73,11 @@ def check(d):
     return None
 
 
-def render(d):
+def render(d, floor='first'):
     def block(name, items, last=False):
         body = ',\n'.join('    ' + json.dumps(it, ensure_ascii=False) for it in items)
         return '  %s: [\n%s\n  ]%s\n' % (name, body, '' if last else ',')
-    return (HEADER + 'window.PLAN_DATA = {\n'
+    return ((HEADER_GROUND if floor == 'ground' else HEADER) + 'window.%s = {\n' % FLOORS[floor][2]
             + '  version: %d,\n  H: %s,\n  SLAB: 0.4167,\n  DOOR: 7,\n' % (d['version'], json.dumps(d['H']))
             + block('walls', d['walls']) + block('pillars', d['pillars']) + block('areas', d['areas'])
             + block('wardrobes', d.get('wardrobes', []), True)
@@ -88,13 +107,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split('?')[0]
+        floor = 'ground' if 'floor=ground' in self.path else 'first'
+        plan_file, orig_file = FLOORS[floor][0], FLOORS[floor][1]
         origin = self.headers.get('Origin', '')
         local = origin.startswith('http://localhost:') or origin.startswith('http://127.0.0.1:')
         if self.headers.get('X-Plan-Editor') != '1' or (origin and not local):
             return self.reply(403, {'ok': False, 'error': 'not allowed'})
         if path == '/api/reset':
-            if os.path.exists(ORIG):
-                shutil.copyfile(ORIG, PLAN)
+            if os.path.exists(orig_file):
+                shutil.copyfile(orig_file, plan_file)
             return self.reply(200, {'ok': True})
         if path != '/api/plan':
             return self.reply(404, {'ok': False, 'error': 'unknown'})
@@ -108,12 +129,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         problem = check(data)
         if problem:
             return self.reply(400, {'ok': False, 'error': problem})
-        if not os.path.exists(ORIG):
-            shutil.copyfile(PLAN, ORIG)  # keep the plan as it was before the first edit
-        tmp = PLAN + '.tmp'
+        if not os.path.exists(orig_file) and os.path.exists(plan_file):
+            shutil.copyfile(plan_file, orig_file)  # keep the plan as it was before the first edit
+        tmp = plan_file + '.tmp'
         with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(render(data))
-        os.replace(tmp, PLAN)
+            f.write(render(data, floor))
+        os.replace(tmp, plan_file)
         return self.reply(200, {'ok': True})
 
     def log_message(self, fmt, *args):

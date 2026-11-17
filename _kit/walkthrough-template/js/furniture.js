@@ -7,16 +7,24 @@
 
   A.buildFurniture = function (scene) {
     const P = A.plan, M = A.M, H = P.H, GF = P.GF;
-    const root = new T.Group();
-    root.name = 'furniture';
-    A.groups.furn = root;
+    // one holder for everything, with a group per floor so a floor can be hidden on its own
+    const all = new T.Group(), ff = new T.Group(), gf = new T.Group();
+    all.name = 'furniture';
+    ff.name = 'furniture-first';
+    gf.name = 'furniture-ground';
+    all.add(ff, gf);
+    A.groups.furnAll = all;
+    A.groups.furn = ff;
+    A.groups.gfurn = gf;
+    let root = ff, FG = 'furn'; // where new pieces go: switched to the ground floor further down
     A.blockers = [];
     const B = new A.Batcher();
-    const pb = (mk, x0, y0, x1, y1, z0, z1) => B.box(mk, x0, y0, x1, y1, z0, z1, 'furn');
+    const pb = (mk, x0, y0, x1, y1, z0, z1) => B.box(mk, x0, y0, x1, y1, z0, z1, FG);
     const block = (x0, y0, x1, y1, lvl) => A.blockers.push([x0 - 0.35, y0 - 0.35, x1 + 0.35, y1 + 0.35, lvl || 0]);
 
     // --- kit -----------------------------------------------------------------
     const cache = {};
+    cache.ico = new T.IcosahedronGeometry(1, 1);
     function fix(geo, mat) { if (mat.userData && mat.userData.s) A.kit.worldUV(geo, mat.userData.s); return geo; }
     function mesh(geo, mat, x, y, z) {
       const m = new T.Mesh(geo, mat);
@@ -43,6 +51,23 @@
       return (cache[key] = g);
     }
     function rb(w, h, d, r, mat, x, y, z) { return mesh(rgeo(w, h, d, r), mat, x, y || 0, z); }
+    /* Soft furnishings modelled in Blender (blender/make_furniture.py): kind = 'seat', 'back',
+       'pillow' or 'bedpillow', stretched to w x h x d and placed like rb (y = underside). */
+    function soft(kind, w, h, d, mat, x, y, z) {
+      if (!A.hasModel || !A.hasModel(kind)) return rb(w, h, d, Math.min(0.18, h * 0.4, w * 0.3, d * 0.3), mat, x, y, z);
+      const s = A.modelSize(kind), g = A.model(kind, { fab: mat, pipe: mat });
+      g.scale.set(w / s[0], h / s[1], d / s[2]);
+      g.position.set(x || 0, y || 0, z || 0);
+      return g;
+    }
+    // bedding draped in Blender: head edge at z0, lying on a mattress whose top is at y
+    function bedding(name, duvet, runner, y, z0) {
+      if (!A.hasModel || !A.hasModel(name)) return null;
+      const g = A.model(name, { duvet, runner });
+      g.position.set(0, y, z0);
+      return g;
+    }
+    let plantTurn = 0;
     function cyl(r0, r1, h, mat, x, y, z, seg) {
       return mesh(new T.CylinderGeometry(r0, r1, h, seg || 24), mat, x, (y || 0) + h / 2, z);
     }
@@ -50,7 +75,10 @@
       obj.position.set(X, z || 0, Y);
       obj.rotation.y = ((rot || 0) * Math.PI) / 180;
       root.add(obj);
-      if (solid !== false) {
+      if (solid !== false && obj.userData.foot) { // plants: only the pot is in the way, the leaves are not
+        const f = obj.userData.foot;
+        block(X - f, Y - f, X + f, Y + f, z || 0);
+      } else if (solid !== false) {
         obj.updateMatrixWorld(true);
         const b = new T.Box3().setFromObject(obj);
         block(b.min.x, b.min.z, b.max.x, b.max.z, z || 0);
@@ -76,18 +104,19 @@
       if (STYLE === 'modern') { // low and square on a recessed plinth
         g.add(bx(w - 0.5, 0.22, d - 0.5, M.black, 0, 0, 0));
         g.add(rb(w, 0.4, d, 0.04, fab, 0, 0.22, 0));
-        g.add(rb(w - 1.5, 0.42, d - 0.8, 0.05, fab, 0, 0.62, 0.3));
+        { const ns = Math.max(1, Math.round((w - 1.5) / 2.2)), sw = (w - 1.5) / ns;
+          for (let i = 0; i < ns; i++) g.add(soft('seat', sw - 0.03, 0.44, d - 0.8, fab, -(w - 1.5) / 2 + sw * (i + 0.5), 0.6, 0.3)); }
         g.add(rb(w, 1.25, 0.55, 0.05, fab, 0, 0.62, -d / 2 + 0.275));
         for (const sx of [-1, 1]) g.add(rb(0.75, 0.75, d, 0.05, fab, sx * (w / 2 - 0.375), 0.62, 0));
-        if (pA) { const p = rb(1.5, 0.75, 0.4, 0.12, pA, -w / 2 + 1.7, 1.06, -d / 2 + 0.85); p.rotation.x = -0.25; g.add(p); }
+        if (pA) { const p = soft('pillow', 1.5, 0.8, 0.4, pA, -w / 2 + 1.7, 1.02, -d / 2 + 0.85); p.rotation.x = -0.25; g.add(p); }
       } else { // light, on tapered timber legs, loose cushions and a throw
         legs(g, w, d, 0.65, M.teak, 0.09, 0.12);
         g.add(rb(w, 0.32, d, 0.1, fab, 0, 0.65, 0));
         const n = Math.max(1, Math.round((w - 0.6) / 2.3)), cw = (w - 0.6) / n;
         for (let i = 0; i < n; i++) {
           const x = -(w - 0.6) / 2 + cw * (i + 0.5);
-          g.add(rb(cw - 0.05, 0.42, d - 0.6, 0.16, fab, x, 0.95, 0.22));
-          const b = rb(cw - 0.08, 1.15, 0.42, 0.2, fab, x, 1.3, -d / 2 + 0.5);
+          g.add(soft('seat', cw - 0.05, 0.46, d - 0.6, fab, x, 0.93, 0.22));
+          const b = soft('back', cw - 0.08, 1.15, 0.46, fab, x, 1.3, -d / 2 + 0.5);
           b.rotation.x = -0.16;
           g.add(b);
         }
@@ -95,7 +124,7 @@
         for (const sx of [-1, 1]) g.add(rb(0.26, 1.0, d, 0.1, fab, sx * (w / 2 - 0.13), 0.9, 0));
         if (pA) {
           g.add(rb(0.5, 0.06, d * 0.9, 0.02, pA, w / 2 - 0.4, 1.92, 0));
-          const p = rb(1.2, 1.2, 0.38, 0.18, pB || pA, -w / 2 + 1.0, 1.4, -d / 2 + 0.95);
+          const p = soft('pillow', 1.2, 1.2, 0.4, pB || pA, -w / 2 + 1.0, 1.36, -d / 2 + 0.95);
           p.rotation.set(-0.3, 0.2, 0);
           g.add(p);
         }
@@ -129,7 +158,8 @@
           l.rotation.z = Math.cos(a) * 0.2; l.rotation.x = -Math.sin(a) * 0.2;
           g.add(l);
         }
-        const sh = cyl(0.7, 0.7, 1.0, M.glowSoft, 0, 4.2, 0, 28); sh.castShadow = false; g.add(sh);
+        if (A.hasModel && A.hasModel('shade_drum')) { const sh = A.model('shade_drum', { shade: M.glowSoft, bulb: M.glow }, { shadow: false }); sh.position.y = 4.2; g.add(sh); }
+        else { const sh = cyl(0.7, 0.7, 1.0, M.glowSoft, 0, 4.2, 0, 28); sh.castShadow = false; g.add(sh); }
       }
       return g;
     }
@@ -182,39 +212,46 @@
       if (STYLE === 'modern') { // low platform, wide flat headboard with a ledge
         g.add(bx(W + 1.8, 0.45, L + 0.9, M.walnut, 0, 0.12, 0.3)); g.add(bx(W + 1.0, 0.12, L + 0.2, M.black, 0, 0, 0.3));
         g.add(rb(W, 0.7, L - 0.15, 0.08, M.fabWhite, 0, 0.57, 0.05));
-        g.add(rb(W + 0.1, 0.24, L * 0.62, 0.06, M.fabGrey, 0, 1.2, L / 2 - L * 0.31 + 0.08));
+        const dv = bedding('bedding', M.fabGrey, null, 1.27, -L / 2 + 0.05);
+        if (dv) g.add(dv); else g.add(rb(W + 0.1, 0.24, L * 0.62, 0.06, M.fabGrey, 0, 1.2, L / 2 - L * 0.31 + 0.08));
         for (const sx of [-1, 1]) {
-          g.add(rb(2.6, 0.38, 1.5, 0.12, M.fabWhite, sx * 1.45, 1.27, -L / 2 + 0.95));
-          g.add(rb(2.2, 0.32, 1.1, 0.1, sx < 0 ? M.fabTeal : M.fabTerra, sx * 1.3, 1.6, -L / 2 + 1.2));
+          const p = soft('bedpillow', 2.6, 1.3, 0.5, M.fabWhite, sx * 1.45, 1.22, -L / 2 + 0.55); p.rotation.x = -0.32; g.add(p);
+          const q = soft('pillow', 1.9, 0.95, 0.42, sx < 0 ? M.fabTeal : M.fabTerra, sx * 1.25, 1.25, -L / 2 + 1.1); q.rotation.x = -0.36; g.add(q);
         }
         g.add(bx(W + 3.4, 2.9, 0.22, M.walnut, 0, 0.12, -L / 2 - 0.2)); g.add(bx(W + 3.4, 0.08, 0.5, M.black, 0, 3.02, -L / 2 - 0.06));
       } else { // timber frame on legs, slatted headboard, layered linen
         legs(g, W + 0.2, L, 0.7, M.teak, 0.1, 0);
         g.add(bx(W + 0.3, 0.3, L + 0.15, M.teak, 0, 0.7, 0)); g.add(rb(W, 0.75, L - 0.15, 0.14, M.fabWhite, 0, 1.0, 0.05));
-        g.add(rb(W + 0.2, 0.28, L * 0.6, 0.12, M.fabIvory, 0, 1.7, L / 2 - L * 0.3 + 0.08)); g.add(rb(W + 0.26, 0.1, 1.6, 0.04, M.fabTeal, 0, 1.97, L / 2 - 1.2));
+        const dv = bedding('bedding', M.fabIvory, M.fabTeal, 1.75, -L / 2 + 0.05);
+        if (dv) g.add(dv); else { g.add(rb(W + 0.2, 0.28, L * 0.6, 0.12, M.fabIvory, 0, 1.7, L / 2 - L * 0.3 + 0.08)); g.add(rb(W + 0.26, 0.1, 1.6, 0.04, M.fabTeal, 0, 1.97, L / 2 - 1.2)); }
         for (const sx of [-1, 1]) {
-          const p = rb(2.5, 1.25, 0.5, 0.22, M.fabWhite, sx * 1.45, 1.72, -L / 2 + 0.55); p.rotation.x = -0.3; g.add(p);
-          const q = rb(1.6, 0.95, 0.4, 0.2, sx < 0 ? M.fabTerra : M.fabMustard, sx * 1.2, 1.76, -L / 2 + 1.12); q.rotation.x = -0.36; g.add(q);
+          const p = soft('bedpillow', 2.5, 1.25, 0.5, M.fabWhite, sx * 1.45, 1.7, -L / 2 + 0.55); p.rotation.x = -0.3; g.add(p);
+          const q = soft('pillow', 1.6, 0.95, 0.4, sx < 0 ? M.fabTerra : M.fabMustard, sx * 1.2, 1.74, -L / 2 + 1.12); q.rotation.x = -0.36; g.add(q);
         }
         for (let k = 0; k < 11; k++) g.add(bx(0.2, 2.6, 0.1, M.teak, -3.0 + k * 0.6, 1.0, -L / 2 - 0.1));
         g.add(bx(W + 0.5, 0.22, 0.16, M.teak, 0, 3.6, -L / 2 - 0.1));
       }
       return g;
     }
-    function pendantV(X, Y, drop, r, shadeMat) {
+    function pendantV(X, Y, drop, r, shadeMat, lvl, ceil) {
       const g = new T.Group();
-      g.add(cyl(0.012, 0.012, H - drop, M.black, 0, drop, 0, 6));
+      g.add(cyl(0.012, 0.012, (ceil || H) - drop, M.black, 0, drop, 0, 6));
       if (STYLE === 'modern') { // slim black tube
         const len = shadeMat ? 1.2 : 0.7;
         g.add(cyl(0.085, 0.085, len, M.black, 0, drop - len, 0, 14));
         const d = cyl(0.075, 0.075, 0.04, M.glow, 0, drop - len - 0.03, 0, 12); d.castShadow = false; g.add(d);
       } else if (shadeMat) { // wide white dome
-        g.add(cyl(0.16, r * 1.7, r * 1.15, M.white, 0, drop - r * 1.15, 0, 28));
-        const d = cyl(r * 1.3, r * 1.3, 0.03, M.glow, 0, drop - r * 1.15 - 0.01, 0, 20); d.castShadow = false; g.add(d);
+        if (A.hasModel && A.hasModel('dome')) {
+          const k = (r * 3.4) / A.modelSize('dome')[0], dm = A.model('dome', { shade: M.white, bulb: M.glow }, { shadow: false });
+          dm.scale.setScalar(k); dm.position.y = drop - A.modelSize('dome')[1] * k; g.add(dm);
+        } else {
+          g.add(cyl(0.16, r * 1.7, r * 1.15, M.white, 0, drop - r * 1.15, 0, 28));
+          const d = cyl(r * 1.3, r * 1.3, 0.03, M.glow, 0, drop - r * 1.15 - 0.01, 0, 20); d.castShadow = false; g.add(d);
+        }
       } else { // paper globe
         const sp = mesh(new T.SphereGeometry(r * 1.35, 20, 14), M.glowSoft, 0, drop - r * 1.35, 0); sp.castShadow = false; g.add(sp);
       }
-      g.position.set(X, 0, Y);
+      g.position.set(X, lvl || 0, Y);
       root.add(g);
     }
 
@@ -230,16 +267,16 @@
       const inner = w - 2 * arm, n = Math.max(1, Math.round(inner / 2.1)), cw = inner / n;
       for (let i = 0; i < n; i++) {
         const x = -inner / 2 + cw * (i + 0.5);
-        g.add(rb(cw - 0.04, 0.5, d - 0.75, 0.14, fab, x, 0.88, 0.3));
-        const bk = rb(cw - 0.06, 1.2, 0.5, 0.18, fab, x, 1.32, -d / 2 + 0.68);
+        g.add(soft('seat', cw - 0.04, 0.54, d - 0.75, fab, x, 0.86, 0.3));
+        const bk = soft('back', cw - 0.06, 1.24, 0.54, fab, x, 1.3, -d / 2 + 0.68);
         bk.rotation.x = -0.14;
         g.add(bk);
       }
       if (pillowA) {
-        const p1 = rb(1.25, 1.25, 0.42, 0.18, pillowA, -inner / 2 + 0.75, 1.36, -d / 2 + 1.12);
+        const p1 = soft('pillow', 1.25, 1.25, 0.44, pillowA, -inner / 2 + 0.75, 1.34, -d / 2 + 1.12);
         p1.rotation.set(-0.3, 0.25, 0);
         g.add(p1);
-        const p2 = rb(1.15, 1.15, 0.4, 0.18, pillowB || pillowA, inner / 2 - 0.7, 1.36, -d / 2 + 1.12);
+        const p2 = soft('pillow', 1.15, 1.15, 0.42, pillowB || pillowA, inner / 2 - 0.7, 1.34, -d / 2 + 1.12);
         p2.rotation.set(-0.3, -0.3, 0);
         g.add(p2);
       }
@@ -258,12 +295,14 @@
       const g = new T.Group();
       g.add(cyl(0.5, 0.55, 0.08, M.brass, 0, 0, 0));
       g.add(cyl(0.04, 0.04, 4.7, M.brass, 0, 0.08, 0, 8));
+      if (A.hasModel && A.hasModel('shade_cone')) { const sh = A.model('shade_cone', { shade: M.glowSoft, bulb: M.glow }, { shadow: false }); sh.position.y = 4.45; g.add(sh); return g; }
       const sh = cyl(0.55, 0.75, 0.95, M.glowSoft, 0, 4.5, 0, 28);
       sh.castShadow = false;
       g.add(sh);
       return g;
     }
     function tableLamp() {
+      if (A.hasModel && A.hasModel('tablelamp')) return A.model('tablelamp', { base: STYLE === 'scandi' ? M.potWhite : STYLE === 'modern' ? M.black : M.pot, shade: M.glowSoft, bulb: M.glow }, { shadow: false });
       const g = new T.Group();
       g.add(cyl(0.16, 0.24, 0.7, M.pot, 0, 0, 0));
       const sh = cyl(0.3, 0.45, 0.55, M.glowSoft, 0, 0.72, 0, 24);
@@ -272,6 +311,17 @@
       return g;
     }
     function plant(h, pot, big) {
+      const name = big ? 'plant_tall' : 'plant_bush';
+      if (A.hasModel && A.hasModel(name)) { // modelled in Blender: real leaves on stems in a turned pot
+        const s = A.modelSize(name), k = big ? h / s[1] : Math.min(1.35, Math.pow(h / s[1], 0.6));
+        const inner = A.model(name, { pot: pot || M.pot, soil: M.soil, stem: M.trunk, leaf: M.leafFine, leaf2: M.leafFine2 });
+        inner.scale.setScalar(k);
+        inner.rotation.y = (plantTurn++ * 2.39996) % (Math.PI * 2); // each plant turned differently
+        const g = new T.Group();
+        g.add(inner);
+        g.userData.foot = (big ? 0.8 : 0.55) * k + 0.1;
+        return g;
+      }
       const g = new T.Group(), R = big ? 0.8 : 0.55;
       g.add(cyl(R, R * 0.72, R * 1.7, pot || M.pot, 0, 0, 0, 20));
       const geo = cache.ico || (cache.ico = new T.IcosahedronGeometry(1, 1));
@@ -289,8 +339,8 @@
       if (STYLE !== 'luxury') return chairV(fab);
       const g = new T.Group();
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(bx(0.11, 1.32, 0.11, M.walnut, sx * 0.62, 0, sz * 0.6));
-      g.add(rb(1.45, 0.24, 1.45, 0.08, fab, 0, 1.3, 0));
-      const bk = rb(1.45, 1.5, 0.2, 0.08, fab, 0, 1.5, -0.66);
+      g.add(soft('seat', 1.45, 0.28, 1.45, fab, 0, 1.28, 0));
+      const bk = soft('back', 1.45, 1.5, 0.24, fab, 0, 1.5, -0.66);
       bk.rotation.x = -0.1;
       g.add(bk);
       return g;
@@ -321,14 +371,18 @@
       g.add(bx(W + 0.3, 0.75, L + 0.2, M.walnut, 0, 0.25, 0));
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(bx(0.2, 0.25, 0.2, M.black, sx * (W / 2 - 0.2), 0, sz * (L / 2 - 0.2)));
       g.add(rb(W, 0.8, L - 0.15, 0.12, M.fabWhite, 0, 1.0, 0.05));
-      g.add(rb(W + 0.24, 0.3, L * 0.6, 0.1, M.fabSand, 0, 1.72, L / 2 - L * 0.3 + 0.08));
-      g.add(rb(W + 0.24, 0.2, 0.9, 0.08, M.fabIvory, 0, 1.86, L / 2 - L * 0.6 - 0.3));
-      g.add(rb(W + 0.3, 0.12, 1.5, 0.05, M.fabTerra, 0, 2.02, L / 2 - 1.15));
+      const dv = bedding('bedding', M.fabSand, M.fabTerra, 1.8, -L / 2 + 0.05);
+      if (dv) g.add(dv);
+      else {
+        g.add(rb(W + 0.24, 0.3, L * 0.6, 0.1, M.fabSand, 0, 1.72, L / 2 - L * 0.3 + 0.08));
+        g.add(rb(W + 0.24, 0.2, 0.9, 0.08, M.fabIvory, 0, 1.86, L / 2 - L * 0.6 - 0.3));
+        g.add(rb(W + 0.3, 0.12, 1.5, 0.05, M.fabTerra, 0, 2.02, L / 2 - 1.15));
+      }
       for (const sx of [-1, 1]) {
-        const p = rb(2.6, 1.35, 0.5, 0.2, M.fabWhite, sx * 1.45, 1.75, -L / 2 + 0.55);
+        const p = soft('bedpillow', 2.6, 1.35, 0.52, M.fabWhite, sx * 1.45, 1.73, -L / 2 + 0.55);
         p.rotation.x = -0.28;
         g.add(p);
-        const q = rb(1.9, 1.0, 0.42, 0.18, sx < 0 ? M.fabTeal : M.fabMustard, sx * 1.25, 1.78, -L / 2 + 1.15);
+        const q = soft('pillow', 1.9, 1.0, 0.44, sx < 0 ? M.fabTeal : M.fabMustard, sx * 1.25, 1.76, -L / 2 + 1.15);
         q.rotation.x = -0.35;
         g.add(q);
       }
@@ -400,10 +454,10 @@
         root.add(m);
       }
     }
-    function pendant(X, Y, drop, r, shadeMat) {
-      if (STYLE !== 'luxury') return pendantV(X, Y, drop, r, shadeMat); // hangs from the ceiling
+    function pendant(X, Y, drop, r, shadeMat, lvl, ceil) { // lvl = floor level, ceil = that floor's ceiling height
+      if (STYLE !== 'luxury') return pendantV(X, Y, drop, r, shadeMat, lvl, ceil); // hangs from the ceiling
       const g = new T.Group();
-      g.add(cyl(0.012, 0.012, H - drop, M.black, 0, drop, 0, 6));
+      g.add(cyl(0.012, 0.012, (ceil || H) - drop, M.black, 0, drop, 0, 6));
       if (shadeMat) {
         g.add(cyl(0.12, r, r * 1.1, shadeMat, 0, drop - r * 1.1, 0, 24));
         const d = cyl(r * 0.8, r * 0.8, 0.03, M.glow, 0, drop - r * 1.1 - 0.01, 0, 20);
@@ -415,7 +469,7 @@
         g.add(s);
         g.add(cyl(0.07, 0.07, 0.12, M.brass, 0, drop - 0.02, 0, 10));
       }
-      g.position.set(X, 0, Y);
+      g.position.set(X, lvl || 0, Y);
       root.add(g);
     }
     // a run of cabinet doors on a face. ax = direction the run goes along.
@@ -515,7 +569,7 @@
     pb(TAP, 26.64, 12.4, 26.715, 12.9, 3.6, 4.4);
 
     // ===== Family lounge ======================================================
-    put(sofa(5, M.fabSand, M.fabTeal, M.fabTerra), 1.97, 21.25, 90);
+    put(sofa(4.8, M.fabSand, M.fabTeal, M.fabTerra), 1.97, 21.1, 90);
     put(sofa(2.9, M.fabTerra, null, null, 2.8), 2.7, 17.3, 40);
     put(roundTable(0.8, 1.7, M.teak, M.brass), 4.5, 18.9, 0);
     rugAt(M.rugLounge, 3.7, 21.0, 5.2, 7.6);
@@ -560,18 +614,21 @@
 
     // ===== Dress ==============================================================
     // wardrobes come from the plan (they can be added and moved in the editor)
-    for (const w of P.wardrobes) {
-      const [x0, y0, x1, y1] = w.r, alongX = w.face === 'rear' || w.face === 'front', dir = w.face === 'front' || w.face === 'south' ? 1 : -1;
-      const a0 = alongX ? x0 : y0, a1 = alongX ? x1 : y1, depth = alongX ? y1 - y0 : x1 - x0;
-      const face = alongX ? (dir > 0 ? y1 : y0) : (dir > 0 ? x1 : x0);
-      if (a1 - a0 < 0.5 || depth < 0.3) continue;
-      cabRun('teakV', alongX ? 'x' : 'y', a0, a1, face, dir, 0, w.h, depth, 1.6);
-      if (w.mirror) {
-        const m0 = a0 + (a1 - a0) * 0.26, m1 = a0 + (a1 - a0) * 0.74, f0 = Math.min(face, face + 0.035 * dir), f1 = Math.max(face, face + 0.035 * dir), top = Math.min(w.h - 0.3, 7.4);
-        if (alongX) pb('mirror', m0, f0, m1, f1, 0.4, top); else pb('mirror', f0, m0, f1, m1, 0.4, top);
+    function wardrobeSet(list, lvl) {
+      for (const w of list) {
+        const [x0, y0, x1, y1] = w.r, alongX = w.face === 'rear' || w.face === 'front', dir = w.face === 'front' || w.face === 'south' ? 1 : -1;
+        const a0 = alongX ? x0 : y0, a1 = alongX ? x1 : y1, depth = alongX ? y1 - y0 : x1 - x0;
+        const face = alongX ? (dir > 0 ? y1 : y0) : (dir > 0 ? x1 : x0);
+        if (a1 - a0 < 0.5 || depth < 0.3) continue;
+        cabRun('teakV', alongX ? 'x' : 'y', a0, a1, face, dir, lvl, lvl + w.h, depth, 1.6);
+        if (w.mirror) {
+          const m0 = a0 + (a1 - a0) * 0.26, m1 = a0 + (a1 - a0) * 0.74, f0 = Math.min(face, face + 0.035 * dir), f1 = Math.max(face, face + 0.035 * dir), top = lvl + Math.min(w.h - 0.3, 7.4);
+          if (alongX) pb('mirror', m0, f0, m1, f1, lvl + 0.4, top); else pb('mirror', f0, m0, f1, m1, lvl + 0.4, top);
+        }
+        block(x0, y0, x1, y1, lvl);
       }
-      block(x0, y0, x1, y1);
     }
+    wardrobeSet(P.wardrobes, 0);
     { const pf = new T.Group(); pf.add(cyl(0.6, 0.55, 1.3, M.fabMustard, 0, 0, 0, 28)); put(pf, 24.2, 43.3, 0, 0, false); }
 
     // ===== Master toilet ======================================================
@@ -613,23 +670,23 @@
     put(roundTable(1.5, 2.4, M.teak, M.metal), 4.2, 42.3, 0); // outdoor dining under the pergola
     for (let i = 0; i < 4; i++) { const a = (i * Math.PI) / 2 + 0.6; put(chair(M.fabGrey), 4.2 + Math.sin(a) * 2.35, 42.3 + Math.cos(a) * 2.35, (a * 180) / Math.PI + 180); }
     put(plant(4.0, M.pot, true), 8.15, 45.2, 0);
-    put(sofa(2.7, M.fabGrey, null, null, 2.5), 23.6, 48.75, 205);
-    put(sofa(2.7, M.fabGrey, null, null, 2.5), 27.3, 48.75, 155);
-    put(roundTable(0.7, 1.5, M.teak, M.metal), 25.45, 49.5, 0);
+    put(sofa(2.7, M.fabGrey, null, null, 2.5), 10.6, 48.75, 205);
+    put(sofa(2.7, M.fabGrey, null, null, 2.5), 14.3, 48.75, 155);
+    put(roundTable(0.7, 1.5, M.teak, M.metal), 12.45, 49.5, 0);
     put(plant(3.6, M.pot, true), 6.4, 49.7, 0);
-    put(plant(3.0, M.potWhite), 12.3, 49.95, 0);
-    put(plant(3.0, M.pot), 21.3, 49.95, 0, 0, false);
+    put(plant(3.0, M.potWhite), 16.9, 49.95, 0);
     put(plant(3.2, M.potWhite), -2.3, 1.2, 0);
     put(plant(3.6, M.pot, true), -2.3, 12.9, 0);
     put(plant(3.0, M.pot), 6.5, -1.1, 0);
     put(plant(3.2, M.potWhite), 20.5, -1.1, 0);
 
-    // ===== Placeholder room under the void ====================================
-    put(sofa(7, M.fabGrey, M.fabSand, M.fabSand), 15.5, 16.3, 0, GF);
-    put(sofa(2.9, M.fabSand, null, null, 2.8), 10.9, 20.2, 90, GF);
-    put(roundTable(1.5, 1.25, M.teak, M.metal), 15.5, 20.2, 0, GF);
-    rugAt(M.rugGF, 15.5, 19.6, 10.5, 7.2, GF);
-    put(plant(6, M.potWhite, true), 22.2, 23.0, 0, GF);
+    if (!P.ground) { // ===== Placeholder room under the void (no ground floor drawing) =====
+      put(sofa(7, M.fabGrey, M.fabSand, M.fabSand), 15.5, 16.3, 0, GF);
+      put(sofa(2.9, M.fabSand, null, null, 2.8), 10.9, 20.2, 90, GF);
+      put(roundTable(1.5, 1.25, M.teak, M.metal), 15.5, 20.2, 0, GF);
+      rugAt(M.rugGF, 15.5, 19.6, 10.5, 7.2, GF);
+      put(plant(6, M.potWhite, true), 22.2, 23.0, 0, GF);
+    }
 
     // ===== Accessories, different in each style ================================
     if (STYLE === 'modern') { // sculptural vase and sphere, a tray, one block sculpture
@@ -655,8 +712,18 @@
       pb('brass', 9.6, 33.7, 10.3, 34.2, 1.7, 1.76);
     }
 
+    // ===== Ground floor: its own file, using the same kit ======================
+    if (P.ground && A.furnishGround) {
+      root = gf; FG = 'gfurn';
+      A.furnishGround({
+        T, P, M, GF, STYLE, HW, TAP, FRAME, cache, pb, block, mesh, bx, rb, soft, cyl, put, legs, sofa, roundTable, floorLamp, tableLamp, plant, chair, dining, bed, bench, wc,
+        curtain, hang, rugAt, artAt, pendant, cabRun, wardrobeSet, add: (o) => { root.add(o); return o; },
+      });
+      root = ff; FG = 'furn';
+    }
+
     B.flush(A.groups);
-    scene.add(root);
-    return root;
+    scene.add(all);
+    return all;
   };
 })();

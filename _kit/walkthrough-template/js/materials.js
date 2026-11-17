@@ -260,7 +260,7 @@
     M.railglass = new T.MeshStandardMaterial({ color: 0xbfe0dc, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.2, depthWrite: false, side: T.DoubleSide, envMapIntensity: 1.3 });
     M.frost = std({ color: 0xdfe9ea, roughness: 0.6, emissive: 0x9fb4b8, emissiveIntensity: 0.5 });
     // one mirror material per room: each gets its own reflection of that room (see main.js)
-    for (const k of ['mirror', 'mirror2', 'mirror3']) M[k] = std({ color: 0xe6ecee, roughness: 0.04, metalness: 1.0, envMapIntensity: 1.0 });
+    for (const k of ['mirror', 'mirror2', 'mirror3', 'mirror4', 'mirror5']) M[k] = std({ color: 0xe6ecee, roughness: 0.04, metalness: 1.0, envMapIntensity: 1.0 });
     M.jaali = std({ map: tJaali, alphaTest: 0.5, side: T.DoubleSide, roughness: 0.5, metalness: 0.6 });
     M.white = std({ color: 0xf6f4ef, roughness: 0.35 });
     M.ceramic = std({ color: 0xfbfbf8, roughness: 0.12, envMapIntensity: 0.9 });
@@ -269,6 +269,7 @@
     M.black = std({ color: 0x141414, roughness: 0.35, metalness: 0.3 });
     M.screen = std({ color: 0x07090c, roughness: 0.08, metalness: 0.4, envMapIntensity: 1.0 });
     M.steel = std({ color: 0xb9bcbf, roughness: 0.3, metalness: 0.9 });
+    M.car = std({ color: 0x8a9096, roughness: 0.32, metalness: 0.65, envMapIntensity: 0.9 });
     // fabrics
     M.fabIvory = std({ color: 0xe7dfd0, roughness: 0.97 });
     M.fabSand = std({ color: 0xc9b79c, roughness: 0.97 });
@@ -280,6 +281,9 @@
     M.sheer = new T.MeshStandardMaterial({ color: 0xfaf6ee, roughness: 1, transparent: true, opacity: 0.5, side: T.DoubleSide, depthWrite: false });
     M.leaf = std({ color: 0x4f7a45, roughness: 0.8, flatShading: true });
     M.leaf2 = std({ color: 0x6b9156, roughness: 0.8, flatShading: true });
+    M.leafFine = std({ color: 0x4a7a40, roughness: 0.55, side: T.DoubleSide });
+    M.leafFine2 = std({ color: 0x5f8f4c, roughness: 0.6, side: T.DoubleSide });
+    M.soil = std({ color: 0x3a2c22, roughness: 1 });
     M.pot = std({ color: 0xb5694d, roughness: 0.85 });
     M.potWhite = std({ color: 0xe9e4da, roughness: 0.7 });
     M.glow = std({ color: 0xfff1d6, emissive: 0xffd9a0, emissiveIntensity: 2.2, roughness: 0.6 });
@@ -304,6 +308,36 @@
     M.art2 = std({ map: artTex(['#e9dfd0', '#3f6f73', '#d6a48c', '#c99a3c'], 52), roughness: 0.9 });
     M.art3 = std({ map: artTex(['#f1e9db', '#b8674a', '#8c9a84', '#2e2a28'], 53), roughness: 0.9 });
     M.art4 = std({ map: artTex(['#d9c9b0', '#7a4a33', '#3f6f73', '#f3ead8'], 54), roughness: 0.9 });
+
+    // A fine woven texture on every fabric, so cushions, bedding and curtains read as cloth up close.
+    const weave = (() => {
+      const s = 256, c = document.createElement('canvas');
+      c.width = c.height = s;
+      const g = c.getContext('2d'), img = g.createImageData(s, s), R = rng(77);
+      const cells = 32, hgt = new Float32Array(s * s);
+      for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+        const fx = (x * cells) / s, fy = (y * cells) / s, ix = Math.floor(fx), iy = Math.floor(fy);
+        const warp = (ix + iy) % 2 === 0;           // over-under weave
+        const u = fx - ix, v = fy - iy;
+        hgt[y * s + x] = (warp ? Math.sin(Math.PI * u) * (0.7 + 0.3 * Math.sin(Math.PI * v)) : Math.sin(Math.PI * v) * (0.7 + 0.3 * Math.sin(Math.PI * u))) + (R() - 0.5) * 0.25;
+      }
+      for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+        const hx = hgt[y * s + ((x + 1) % s)] - hgt[y * s + ((x - 1 + s) % s)], hy = hgt[((y + 1) % s) * s + x] - hgt[((y - 1 + s) % s) * s + x];
+        const nx = -hx * 0.9, ny = -hy * 0.9, nz = 1, l = Math.hypot(nx, ny, nz), o = (y * s + x) * 4;
+        img.data[o] = ((nx / l) * 0.5 + 0.5) * 255; img.data[o + 1] = ((ny / l) * 0.5 + 0.5) * 255; img.data[o + 2] = ((nz / l) * 0.5 + 0.5) * 255; img.data[o + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      const t = new T.CanvasTexture(c);
+      t.wrapS = t.wrapT = T.RepeatWrapping;
+      t.repeat.set(2.5, 2.5);
+      t.anisotropy = 8;
+      return t;
+    })();
+    for (const k of ['fabIvory', 'fabSand', 'fabTerra', 'fabMustard', 'fabTeal', 'fabGrey', 'fabWhite']) {
+      M[k].normalMap = weave;
+      M[k].normalScale.set(0.45, 0.45);
+      M[k].roughness = 0.92;
+    }
 
     for (const k in S) M[k].userData.s = S[k];
     A.M = M;

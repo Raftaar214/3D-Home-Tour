@@ -2,7 +2,7 @@
 
 For an architect's practice with many clients. This file tells Claude Code how to turn any client's floor plans into an editable plan, a 3D walkthrough, a single HTML file, a shareable link and, optionally, video clips. It holds the folder layout, the prompt to give, the standing preferences, the build specification, the checks, the mistakes to avoid, and every instruction from the first project, word for word.
 
-First written 13 November 2026 from the project in `D:\Arch` (one client, first floor only). Revised the same day for many clients, any number of floors, and a tour path planned afresh for each plan.
+First written 13 November 2026 from the project in `D:\Arch` (one client, first floor only). Revised the same day for many clients, any number of floors, and a tour path planned afresh for each plan. Revised 17 November 2026 after the same client's ground floor was added: the kit now handles two floors, a time-of-day slider, a Start Tour with room labels and code-made music, and a stair that runs past the first floor to the roof.
 
 ---
 
@@ -58,7 +58,14 @@ The first project had one floor. Others will not.
 - **Captions and map** show the floor name along with the room.
 - **If only some floors are supplied**, say which are missing, build what is there, and mark anything invented (for example a plain room under a void) as a placeholder.
 
-State of the kit: `walkthrough-template` handles **one floor at a time**. The first multi-floor job must extend it: a `floors` list in the plan data, each with its level, height, walls, pillars, areas and wardrobes; stairs defined once and shared by the two floors they join; floor tabs in the editor; per-floor dollhouse buttons. Do that work once, then save it back into `_kit`.
+State of the kit (17 Nov 2026): `walkthrough-template` handles **a ground floor and a first floor**.
+
+- Each floor has its own plan file: `js/plan-data.js` (first floor, `window.PLAN_DATA`) and `js/plan-data-ground.js` (ground floor, `window.PLAN_DATA_GROUND`). Same format; ground-floor heights are measured from the ground-floor finish, and `"PORCH"` means the car-porch level 1'-6" below it. A home without a ground-floor drawing simply has no `plan-data-ground.js`, and a plain placeholder room is shown under the void.
+- The editor has a tab per floor (`editor.html` and `editor.html?floor=ground`), each saving to its own file through `serve.py`, with the other floor's walls shown in pale blue on request and the client's drawing for that floor (`debug/plan.png`, `debug/plan-ground.png`) as an underlay.
+- Ground-floor rooms are furnished in `js/furniture-ground.js` with the same kit as the first floor, so all three styles carry through.
+- The dollhouse has Ground floor / First floor buttons; the ground-floor view lifts the whole first floor away.
+- Pillars that run through both floors (porch columns, for example) must sit at the same X/Y in both plan files; if one is moved in the editor, move the other to match.
+- A basement or a second floor is still to be added the same way: one more plan file, one more editor tab, one more dollhouse button.
 
 ---
 
@@ -125,6 +132,28 @@ Not yet done on any project: the first session connected Higgsfield but never ge
 No video step on this track. Record the guided tour with a screen recorder if a video is needed.
 
 ---
+
+### Blender, for better furniture models (set up 17 Nov 2026)
+
+There is no Blender connector in the Claude connector directory, so Claude Code drives Blender directly from the command line. Blender 5.3.0 (the official portable ZIP from download.blender.org, checksum verified) is unpacked at `D:\Apps\blender-5.3.0-windows-x64`. On another PC, download the same ZIP from blender.org (ask the architect first) and unpack it outside the client folders.
+
+- `walkthrough/blender/make_furniture.py` builds the soft furnishings and fittings and writes `js/models-data.js`:
+
+  ```
+  "D:\Apps\blender-5.3.0-windows-x64\blender.exe" --background --factory-startup --python walkthrough\blender\make_furniture.py -- walkthrough\js\models-data.js
+  ```
+
+  It takes about 15 seconds.
+- **What Blender makes:**
+  - seat and back cushions with piping
+  - throw pillows and bed pillows with pinched corners
+  - a duvet and a runner, draped over the mattress by cloth simulation (one set for a double bed, one for a single)
+  - two potted plants with real leaves
+  - turned lamp shades, a table-lamp base and a pendant dome
+- **Styles:** each model is split by role (fabric, piping, pot, leaf, shade...), and the walkthrough paints each role with the current style's material, so the same models serve all three styles.
+- **Loading:** `js/models.js` loads the models. `furniture.js` uses them through `soft()`, `bedding()`, `plant()` and the lamp functions, and falls back to plain shapes if `models-data.js` is missing.
+- **Fabric:** every fabric material also gets a fine woven texture.
+- **Keep it light:** about 1,000 triangles per cushion and about 5,000 per bedding set. After any change to the models, measure a frame in the busiest views (street, hall, bedroom). On the practice PC the target is under about 10 ms at 1.25× resolution.
 
 ## 7. Preferences and decisions
 
@@ -201,6 +230,10 @@ No video step on this track. Record the guided tour with a screen recorder if a 
 - **A fixed tour.** The route was written for one layout and had to be redrawn when walls moved. Plan it from the plan each time (section 4).
 - **Unrequested furniture.** A fridge and pantry placed opposite the counter, and an open door standing in the kitchen, both read as clutter and were removed.
 - **Link not refreshed.** After every change, republish the share copy to the same link without being asked.
+- **A second link by accident.** Publishing the share copy without the existing link's URL makes a new, separate link. Always publish to the same URL.
+- **Editor edits arriving mid-job.** The client's plans were edited again while the ground floor was being built. Before every rebuild, compare the plan files with the last version you fitted (a plan diff), and refit furniture, labels and the tour to what changed.
+- **Stairs that go further than one floor.** The front stair runs ground floor → first-floor landing beside the balcony → roof. Read the stair lines on every floor's drawing, not only the lowest.
+- **Open doors meeting furniture.** A newly opened or widened door leaf ended up through a sofa or armchair. After every door edit, check the swing area of each open leaf.
 
 ---
 
@@ -233,6 +266,24 @@ Copied as typed.
 23. `in the playbook file, make changes 1. i'm an architect, i'll have many clients, so i'll name the folder raj architect and then many customers/clients in it , so the files that you are asking which would be needing every time, keep it somewhere in the folder for reuse and every clients names' folder would be there with their floor plans 2. this time it is only first floor, next time there can be basement, ground or first or multi floors 3. walkthrough from main door to everywhere in house is not fixed, it will change according to plan... do not fix it`
 24. `there are changes in site plan, added some and removed something 1. in kitchen, a wardrobe is added, and remove the cabinet which is already there in front of that wardrobe 2. this looks like 3d cartooned video 3. use higgsfield to make this kind of realistic video 3. also the three styles only changes the colour only, instead of this make it change the furniture style, wall hanging designs, accessories, lightings, hardware fittings 4. update and then also update the artifact`
 
+25. `Add a time-of-day slider from morning to sunset to night. Move the sunlight through the windows as I drag, make it warm and golden at sunset, and at night turn on the lamps and ceiling lights with a soft glow. Add soft shadows and a light reflection on the floors and glass. Keep every change smooth and keep it running well on a normal laptop.`
+26. `Add a Start Tour button. The camera walks slowly from the front door through every room in order, pausing in each one with a small label: the room name, its size in square feet and one selling point. Add soft background music made with code, no sound files, and a mute button. At the end, rise up to the dollhouse view of the whole home.`
+27. `Im adding ground floor plan also check this also and make same as u do for first floor`
+28. `the front stair goes from ground to balcony and then roof`
+29. `also the site plan is updated with somewalls and wardrobe shifts`
+30. `use blender connector to enhance the furniture design and clarity` (no connector exists; Blender was installed and driven from Claude Code, see section 6)
+31. Reply to "Install Blender so I can model better furniture with it?": `Yes, install Blender`
+32. `g-stair-front, g-stair-north,g-stair-south these walls' height is till roof`
+33. `make it to walk on front road too, walkthrough on road`
+
+Notes on 32–33: plan walls can now run through both floors (`"z": [0, "ROOF"]` in the ground floor file), and a wall can have openings one above the other (a door on each floor). The stair's north wall got an opening onto the front balcony at first-floor level, and its front wall a second window there. The road in front is walkable, the gate stands open, and the tour now starts on the road looking at the house.
+
+How these were built, for reuse:
+
+- **Time of day** (`js/lighting.js`): one value from 0 (7 am) to 1 (9:30 pm) sets the sun's direction and colour, the sky, the light from above, lamp brightness, glowing fittings and ceiling-light halos, stars, and lit windows across the road. The slider eases toward the chosen time; the reflected sky and the mirrors are redrawn only a few times while it moves and once when it settles, so dragging stays smooth. Morning, Sunset and Night buttons jump straight there. `?tod=0.72` in the address opens at sunset.
+- **Start Tour** (`js/tour.js`): a large Start Tour button and the Start tour control on the bar. Each pause shows a label with the floor, room name, area in sq ft and one selling point. These are written per home in the tour's key points (`label: [name, size, selling point]`); take sizes from the drawing, and keep each selling point to one short factual line. At the end the camera rises through the roof to the dollhouse view and turns slowly.
+- **Music** (`js/music.js`): a slow four-chord pad with soft bell notes, made in the browser with Web Audio. It starts with the tour (browsers only allow sound after a click) and has a Music on/off button.
+
 ---
 
 ## 11. What is in `_kit\walkthrough-template`
@@ -242,11 +293,15 @@ Copied as typed.
 | `index.html` | The walkthrough page |
 | `editor.html`, `js/editor.js` | The plan editor |
 | `serve.py`, `Start plan editor.bat` | Local server that saves editor changes to disk |
-| `js/plan-data.js` | Plan data; holds the first project's layout as an example of the format |
+| `js/plan-data.js`, `js/plan-data-ground.js` | Plan data per floor; hold the first project's layout as an example of the format |
 | `js/plan.js` | Turns the plan into floors, railings and walkable areas |
 | `js/shell.js`, `js/materials.js`, `js/styles.js` | Building, textures and the three styles |
-| `js/furniture.js`, `js/lighting.js`, `js/tour.js`, `js/main.js` | Furniture, light, tour and controls, start-up |
+| `js/furniture.js`, `js/furniture-ground.js` | Furniture for the first and ground floors |
+| `js/lighting.js` | Sky, sun and time of day, lamps, ceiling lights |
+| `js/music.js` | Background music made in code, with mute |
+| `js/models.js`, `js/models-data.js`, `blender/make_furniture.py` | Furniture models made in Blender, and their loader |
+| `js/tour.js`, `js/main.js` | Tour, labels, walking, dollhouse and controls; start-up |
 | `build.py` | Makes the single HTML file, or a share copy with `--share` |
-| `debug/` | Put the client's drawing here as `plan.png` for the overlay check |
+| `debug/` | Put the client's drawings here as `plan.png` (first floor) and `plan-ground.png` (ground floor) for the editor underlay |
 
-Replace for each client: `plan-data.js`, the fixed lists in `plan.js` (slabs, room floors, captions, stair positions), the furniture placements, the lights and the tour route. The editor, save server, materials, styles, controls and build script carry over unchanged.
+Replace for each client: the plan files, the fixed lists in `plan.js` (slabs, room floors, captions, stair positions, the ground floor's room list and steps), the furniture placements in both furniture files, the lamp and ceiling-light positions in `lighting.js`, and the tour route with its labels. The editor, save server, materials, styles, controls and build script carry over unchanged.
