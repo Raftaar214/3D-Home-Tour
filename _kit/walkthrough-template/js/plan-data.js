@@ -31,12 +31,12 @@ window.PLAN_DATA = {
     {"id": "front", "ax": "x", "r": [9.25, 46.25, 29.625, 47], "ops": [{"type": "win", "a": 9.7, "b": 15.5, "sill": 3.0833333333333335, "head": 8}, {"type": "gdoor", "a": 17.03, "b": 18.9267, "sill": 0, "head": 8, "hinge": "a", "swing": -1, "isOpen": true}]},
     {"id": "toilet-dress", "ax": "x", "r": [22.625, 37.875, 30, 38.25], "ops": [{"type": "door", "a": 24, "b": 26.75, "sill": 0, "head": 7, "hinge": "a", "swing": -1, "isOpen": true}]},
     {"id": "suite-south-liner", "ax": "y", "r": [29.25, 28.25, 29.625, 31.25], "ops": []},
-    {"id": "terrace-parapet", "ax": "y", "r": [0, 28.625, 0.375, 45.7667], "z": [0, 1.5], "mat": "stone", "ops": []},
+    {"id": "terrace-parapet", "ax": "y", "r": [0.0833, 28.625, 0.4583, 45.7667], "z": [0, 1.5], "mat": "stone", "ops": []},
     {"id": "void-east-low", "ax": "x", "r": [9, 14.25, 29.625, 14.625], "z": ["GF", 0], "hidden": true},
     {"id": "void-west-low", "ax": "x", "r": [9, 27.875, 29.625, 28.25], "z": ["GF", 0], "hidden": true},
     {"id": "void-north-low", "ax": "y", "r": [9, 14.625, 9.375, 27.875], "z": ["GF", "-SLAB"], "hidden": true},
     {"id": "wall-23", "ax": "x", "r": [0.3335, 46.5836, 5.5834, 46.9586], "z": [0, 3.5], "ops": []},
-    {"id": "wall-24", "ax": "x", "r": [15.0007, 50.6665, 19.0007, 51.1665], "z": [0, 3.5], "ops": []},
+    {"id": "wall-24", "ax": "x", "r": [15.0007, 50.5832, 19.0007, 51.1665], "z": [0, 3.5], "ops": []},
     {"id": "wall-25", "ax": "y", "r": [15.0007, 50.3333, 15.5007, 51.1666], "z": [0, 3.5], "ops": []},
     {"id": "wall-26", "ax": "y", "r": [5.0834, 46.9167, 5.5834, 50.8334], "z": [0, 1.5], "ops": []},
     {"id": "wall-27", "ax": "x", "r": [5.0832, 50.3335, 14.9999, 50.8335], "z": [0, 1.5], "ops": []}
@@ -55,8 +55,8 @@ window.PLAN_DATA = {
   ],
   areas: [
     {"id": "void", "name": "Double Height", "kind": "void", "r": [13.2083, 14.625, 26.125, 24.375]},
-    {"id": "terrace", "name": "Terrace", "kind": "terrace", "r": [0, 28.625, 8.875, 47]},
-    {"id": "front-balcony", "name": "Front Balcony", "kind": "balcony", "r": [5.39, 47, 19.0417, 50.7067]},
+    {"id": "terrace", "name": "Terrace", "kind": "terrace", "r": [0.25, 28.625, 8.875, 46.8333]},
+    {"id": "front-balcony", "name": "Front Balcony", "kind": "balcony", "r": [5.39, 46.8333, 19.0417, 50.54]},
     {"id": "rear-balcony", "name": "Rear Balcony", "kind": "balcony", "r": [-3.5, -2, 30.375, 0]},
     {"id": "north-balcony", "name": "Rear Balcony", "kind": "balcony", "r": [-3.5, 0, -1, 14.625]}
   ],

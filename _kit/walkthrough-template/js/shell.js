@@ -309,7 +309,7 @@
     /* On the outer faces of chosen walls (a face is outer when no room, and not the stair, lies
        beyond it), stopping at openings and wrapping round outer wall ends, and all round chosen
        pillars. Chosen in the plan (wall.clad) or in this home's list. */
-    const CLAD = ['g-stair-front', 'g-stair-north', 'g-stair-south', 'gp-porch-1', 'gp-porch-2'];
+    const CLAD = ['g-stair-front', 'g-stair-north', 'g-stair-south', 'gp-porch-1', 'gp-porch-2', 'p-terrace-1', 'p-terrace-2'];
     function cladding(walls, pillars, interior) {
       const T_ = 0.06, isIn = (x, y, list) => list.some((f) => x > f[0] && x < f[2] && y > f[1] && y < f[3]);
       const wallRects = walls.map((w) => w.r);
@@ -369,6 +369,7 @@
       }
     }
     buildWalls(P.walls, P.floors);
+    cladding(P.walls, P.pillars, P.roomFloors.concat(P.midFloor)); // first floor: WPC panels where chosen
     for (const p of P.pillars) box(p.mat, p.r[0], p.r[1], p.r[2], p.r[3], p.z[0] === 0 ? -0.02 : p.z[0], p.z[1]);
 
     // --- slabs, floors, ceilings -------------------------------------------

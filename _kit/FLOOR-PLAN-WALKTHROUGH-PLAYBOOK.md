@@ -387,10 +387,11 @@ Notes on 49–50:
 52. `there is roof balcony above the front balcony, when i asked you to add lower wall boundary wall on roof, you didnt cover this balcony, this balcony roof of front balcony is part of room, make change in the boundary wall of roof`
 53. `use Charcoal Grey wpc panels for outer wall of g-stair-front,g-stair-north,g-stair-south and pillars gp-porch-2 and gp-porch-1`
 54. `also there is edit in editor`
+55. `p-terrace-1, p-terrace-2 do the same above wpc panel for these pillars there is edit in editor`
 
 Notes on 52–54:
 - The roof over the front balcony is part of the roof: tiled, walkable, inside the 3 ft boundary wall. The boundary wall is left out where a wall of the floor below rises above the roof (the stair tower).
-- WPC panels (`wpc` material: charcoal grey slats about 3" wide) cover the outer faces of the chosen walls, stopping at openings and wrapping round bare wall ends, and wrap chosen pillars from the floor up. A face counts as outer when no room, and not the stair, lies beyond it. Chosen in `CLAD` in `shell.js`, or with `"clad": "wpc"` on a wall or pillar in the plan file.
+- WPC panels (`wpc` material: charcoal grey slats about 3" wide) cover the outer faces of the chosen walls, stopping at openings and wrapping round bare wall ends, and wrap chosen pillars from the floor up. A face counts as outer when no room, and not the stair, lies beyond it. Both floors (the terrace pillars `p-terrace-1`, `p-terrace-2` continue the porch pillars up to the roof). Chosen in `CLAD` in `shell.js`, or with `"clad": "wpc"` on a wall or pillar in the plan file.
 
 ---
 
